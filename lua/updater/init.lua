@@ -725,16 +725,20 @@ function M.check_updates()
 end
 
 function M.setup(opts)
-    opts = opts or {}
-    
-    config = vim.tbl_deep_extend("force", config, opts)
-    cd_repo_path = "cd " .. config.repo_path .. " && "
-    
-    vim.keymap.set("n", config.keys.open, M.open, { noremap = true, silent = true, desc = "Open Neovim Dotfiles Updater" })
-    
-    vim.api.nvim_create_user_command("UpdaterOpen", M.open, { desc = "Open the dotfiles updater" })
-    vim.api.nvim_create_user_command("UpdaterCheck", M.check_updates, { desc = "Check for dotfiles updates" })
-    vim.api.nvim_create_user_command("UpdaterRefresh", M.refresh, { desc = "Refresh updater status" })
+	opts = opts or {}
+
+	config = vim.tbl_deep_extend("force", config, opts)
+	cd_repo_path = "cd " .. config.repo_path .. " && "
+
+	vim.keymap.set(
+		"n",
+		config.keys.open,
+		M.open,
+		{ noremap = true, silent = true, desc = "Open Neovim Dotfiles Updater" }
+	)
+
+	vim.api.nvim_create_user_command("UpdaterOpen", M.open, { desc = "Open the dotfiles updater" })
+	vim.api.nvim_create_user_command("UpdaterCheck", M.check_updates, { desc = "Check for dotfiles updates" })
 end
 
 return M
