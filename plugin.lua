@@ -1,5 +1,5 @@
 return {
-    "updater.nvim",
+    "cosmicbuffalo/updater.nvim",
     opts = {
         -- Path to the dotfiles repository (default: current Neovim config directory)
         repo_path = vim.fn.stdpath("config"),
@@ -31,7 +31,7 @@ return {
     keys = {
         { "<leader>e", function() require("updater").open() end, desc = "Open Dotfiles Updater" },
     },
-    cmd = { "UpdaterOpen", "UpdaterCheck", "UpdaterRefresh" },
+    cmd = { "UpdaterOpen", "UpdaterCheck" },
     config = function(_, opts)
         require("updater").setup(opts)
     end,
