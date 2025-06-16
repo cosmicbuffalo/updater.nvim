@@ -7,9 +7,16 @@ A Neovim plugin for managing and updating your dotfiles repository directly from
 - 🔄 Check for updates from your dotfiles repository
 - 🚀 Update your dotfiles with a single keystroke
 - 📊 Visual diff of local vs remote commits
-- 🎨 Beautiful TUI interface similar to Lazy.nvim
-- ⚡ Configurable timeouts and git operations
-- 🔧 Support for different branches and workflows
+- 🎨 Simple TUI interface similar to Lazy.nvim
+- ⚡ Configurable timeouts for git operations
+
+## 🚧 Planned Features    
+
+- Notification on configurable interval for available updates
+- Integrate with Lazy.nvim and the lazy lockfile to enable dotfile + plugin
+updates in one shot
+- Link to PRs from the TUI
+- Toggle release information like lazy
 
 ## Installation
 
