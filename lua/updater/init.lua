@@ -1,3 +1,4 @@
+local Utils = require("updater.utils")
 local M = {}
 
 local config = {
@@ -46,6 +47,8 @@ local config = {
 		update = "u",
 		refresh = "r",
 		close = "q",
+		install_plugins = "i",
+		update_all = "U",
 	},
 }
 
@@ -63,6 +66,9 @@ local state = {
 	behind_count = 0,
 	remote_commits = {},
 	commits_in_branch = {},
+	plugin_updates = {},
+	has_plugin_updates = false,
+	is_installing_plugins = false,
 }
 
 local cd_repo_path = "cd " .. config.repo_path .. " && "
@@ -284,6 +290,86 @@ local function get_remote_commits_not_in_local()
 	return parse_commits_from_output(result)
 end
 
+local function get_installed_plugin_commit(plugin_name)
+	local lazy_config = require("lazy.core.config")
+	local plugin = lazy_config.plugins[plugin_name]
+
+	if not plugin or not plugin._.installed then
+		return nil
+	end
+
+	local Git = require("lazy.manage.git")
+	local info = Git.info(plugin.dir)
+
+	if info then
+		return info.commit
+	end
+
+	return nil
+end
+
+local function get_plugin_updates()
+	local plugin_updates = {}
+	local lockfile_path = config.repo_path .. "/lazy-lock.json"
+	local lockfile_data = Utils.lazy.read_lockfile(lockfile_path)
+
+	for plugin_name, lock_info in pairs(lockfile_data) do
+		local installed_commit = get_installed_plugin_commit(plugin_name)
+
+		if installed_commit and lock_info.commit then
+			if installed_commit ~= lock_info.commit then
+				table.insert(plugin_updates, {
+					name = plugin_name,
+					installed_commit = installed_commit:sub(1, 7),
+					lockfile_commit = lock_info.commit:sub(1, 7),
+					branch = lock_info.branch or "main",
+				})
+			end
+		end
+	end
+
+	return plugin_updates
+end
+
+local function install_plugin_updates()
+	state.is_installing_plugins = true
+	M.render()
+
+	local cmd = cd_repo_path .. "nvim --headless +'lua require(\"lazy\").restore({wait=true})' +qa"
+	local result, err = execute_command(cmd, "default")
+
+	state.is_installing_plugins = false
+
+	if err or not result or result:match("error") or result:match("Error") then
+		vim.notify(
+			"Failed to install plugin updates: " .. (result or err or "Unknown error"),
+			vim.log.levels.ERROR,
+			{ title = "Plugin Updates" }
+		)
+	else
+		vim.notify(
+			"Successfully restored plugins from lockfile!",
+			vim.log.levels.INFO,
+			{ title = "Plugin Updates" }
+		)
+		state.plugin_updates = get_plugin_updates()
+		state.has_plugin_updates = #state.plugin_updates > 0
+	end
+
+	M.render()
+end
+
+local function update_dotfiles_and_plugins()
+	state.is_updating = true
+	M.render()
+
+	update_repo()
+
+	if not state.is_updating then
+		install_plugin_updates()
+	end
+end
+
 local function are_commits_in_branch(commits, branch)
 	local result = {}
 	for _, commit in ipairs(commits) do
@@ -424,6 +510,8 @@ function M.create_window()
 	vim.keymap.set("n", "<Esc>", M.close, opts)
 	vim.keymap.set("n", config.keys.update, update_repo, opts)
 	vim.keymap.set("n", config.keys.refresh, M.refresh, opts)
+	vim.keymap.set("n", config.keys.install_plugins, install_plugin_updates, opts)
+	vim.keymap.set("n", config.keys.update_all, update_dotfiles_and_plugins, opts)
 
 	vim.api.nvim_buf_set_option(state.buffer, "modifiable", false)
 	vim.api.nvim_buf_set_option(state.buffer, "filetype", "dotfiles-updater")
@@ -493,12 +581,21 @@ local function generate_header()
 
 	if state.is_updating then
 		table.insert(header, "  Updating dotfiles... Please wait.")
+	elseif state.is_installing_plugins then
+		table.insert(header, "  Installing plugin updates... Please wait.")
 	elseif state.is_refreshing then
 		table.insert(header, "  Checking for updates... Please wait.")
-	elseif state.behind_count > 0 then
-		table.insert(header, "  Updates available! Press 'u' to update.")
+	elseif state.behind_count > 0 or state.has_plugin_updates then
+		local messages = {}
+		if state.behind_count > 0 then
+			table.insert(messages, "Dotfiles update")
+		end
+		if state.has_plugin_updates then
+			table.insert(messages, tostring(#state.plugin_updates) .. " plugin updates")
+		end
+		table.insert(header, "  " .. table.concat(messages, " and ") .. " available!")
 	else
-		table.insert(header, "  Your dotfiles are up to date with origin/" .. config.main_branch .. "!")
+		table.insert(header, "  Your dotfiles and plugins are up to date!")
 	end
 	table.insert(header, "")
 
@@ -508,7 +605,9 @@ end
 local function generate_keybindings()
 	return {
 		"  Keybindings:",
+		"    " .. config.keys.update_all .. " - Update dotfiles + install plugin updates",
 		"    " .. config.keys.update .. " - Update dotfiles",
+		"    " .. config.keys.install_plugins .. " - Install plugin updates (:Lazy restore)",
 		"    " .. config.keys.refresh .. " - Refresh status",
 		"    " .. config.keys.close .. " - Close window",
 		"",
@@ -536,6 +635,28 @@ local function generate_remote_commits_section()
 		table.insert(remote_commit_info, "  ")
 	end
 	return remote_commit_info
+end
+
+local function generate_plugin_updates_section()
+	local plugin_update_info = {}
+	if #state.plugin_updates > 0 then
+		table.insert(plugin_update_info, "  Plugin updates available:")
+		table.insert(plugin_update_info, "  " .. string.rep("─", 70))
+
+		for _, plugin in ipairs(state.plugin_updates) do
+			local line = "  "
+				.. plugin.name
+				.. " ("
+				.. plugin.installed_commit
+				.. " → "
+				.. plugin.lockfile_commit
+				.. ")"
+
+			table.insert(plugin_update_info, line)
+		end
+		table.insert(plugin_update_info, "  ")
+	end
+	return plugin_update_info
 end
 
 local function generate_commit_log()
@@ -571,20 +692,20 @@ local function generate_commit_log()
 	return log_lines
 end
 
-local function apply_highlighting(lines, status_line, keybindings_start, remote_commit_line)
+local function apply_highlighting(lines, status_line, keybindings_start, remote_commit_line, plugin_update_line)
 	local ns_id = vim.api.nvim_create_namespace("DotfilesUpdater")
 	vim.api.nvim_buf_clear_namespace(state.buffer, ns_id, 0, -1)
 
 	vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "Directory", 1, 2, -1)
 
-	if state.is_updating or state.is_refreshing then
+	if state.is_updating or state.is_refreshing or state.is_installing_plugins then
 		vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "WarningMsg", status_line, 2, -1)
 	else
 		vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "String", status_line, 2, -1)
 	end
 
-	local keys = { config.keys.update, config.keys.refresh, config.keys.close }
-	for i = 0, 2 do
+	local keys = { config.keys.update_all, config.keys.update, config.keys.install_plugins, config.keys.refresh, config.keys.close }
+	for i = 0, 4 do
 		local line_num = keybindings_start + i
 		vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "Statement", line_num, 4, 4 + #keys[i + 1])
 	end
@@ -608,9 +729,28 @@ local function apply_highlighting(lines, status_line, keybindings_start, remote_
 		remote_commit_line = remote_commit_line + #state.remote_commits + 1
 	end
 
-	vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "Special", remote_commit_line, 2, -1)
+	-- Highlight plugin update info
+	if #state.plugin_updates > 0 then
+		vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "Title", plugin_update_line, 2, -1)
 
-	local log_start = remote_commit_line + 3
+		-- Highlight plugin names and commits
+		for i = 1, #state.plugin_updates do
+			local line_num = plugin_update_line + i
+			vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "Directory", line_num, 2,
+				2 + #state.plugin_updates[i].name)
+			vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "Constant", line_num,
+				2 + #state.plugin_updates[i].name + 2,
+				2 + #state.plugin_updates[i].name + 2 + #state.plugin_updates[i].installed_commit)
+			vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "Directory", line_num,
+				2 + #state.plugin_updates[i].name + 2 + #state.plugin_updates[i].installed_commit + 5,
+				2 + #state.plugin_updates[i].name + 2 + #state.plugin_updates[i].installed_commit + 5 + #state.plugin_updates[i].lockfile_commit)
+		end
+		plugin_update_line = plugin_update_line + #state.plugin_updates + 1
+	end
+
+	vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "Special", plugin_update_line, 2, -1)
+
+	local log_start = plugin_update_line + 3
 	for i, commit in ipairs(state.commits) do
 		local line_num = log_start + i - 1
 		local line = vim.api.nvim_buf_get_lines(state.buffer, line_num, line_num + 1, false)
@@ -637,6 +777,7 @@ function M.render()
 	local header = generate_header()
 	local keybindings = generate_keybindings()
 	local remote_commit_info = generate_remote_commits_section()
+	local plugin_update_info = generate_plugin_updates_section()
 	local commit_log = generate_commit_log()
 
 	local lines = {}
@@ -659,12 +800,20 @@ function M.render()
 		remote_commit_line = #lines - 1
 	end
 
+	local plugin_update_line = #lines + 1
+	for _, line in ipairs(plugin_update_info) do
+		table.insert(lines, line)
+	end
+	if #plugin_update_info == 0 then
+		plugin_update_line = #lines - 1
+	end
+
 	for _, line in ipairs(commit_log) do
 		table.insert(lines, line)
 	end
 
 	vim.api.nvim_buf_set_lines(state.buffer, 0, -1, false, lines)
-	apply_highlighting(lines, status_line, keybindings_start, remote_commit_line)
+	apply_highlighting(lines, status_line, keybindings_start, remote_commit_line, plugin_update_line)
 
 	vim.api.nvim_buf_set_option(state.buffer, "modifiable", false)
 	vim.api.nvim_win_set_height(state.window, math.min(#lines + 1, 60))
@@ -692,6 +841,8 @@ function M.refresh()
 	end
 
 	state.commits, state.log_type = get_commit_log()
+	state.plugin_updates = get_plugin_updates()
+	state.has_plugin_updates = #state.plugin_updates > 0
 	state.is_refreshing = false
 	M.render()
 end
