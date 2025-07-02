@@ -42,13 +42,20 @@ local config = {
 			level = "info",
 		},
 	},
-	keys = {
+	keymap = {
 		open = "<leader>e",
 		update = "u",
 		refresh = "r",
 		close = "q",
 		install_plugins = "i",
 		update_all = "U",
+	},
+	check_updates_on_startup = {
+		enabled = true,
+	},
+	periodic_check = {
+		enabled = true,
+		frequency_minutes = 240, -- 4 hours = 240 minutes
 	},
 }
 
@@ -69,6 +76,8 @@ local state = {
 	plugin_updates = {},
 	has_plugin_updates = false,
 	is_installing_plugins = false,
+	periodic_timer = nil,
+	last_check_time = 0,
 }
 
 local cd_repo_path = "cd " .. config.repo_path .. " && "
@@ -347,11 +356,7 @@ local function install_plugin_updates()
 			{ title = "Plugin Updates" }
 		)
 	else
-		vim.notify(
-			"Successfully restored plugins from lockfile!",
-			vim.log.levels.INFO,
-			{ title = "Plugin Updates" }
-		)
+		vim.notify("Successfully restored plugins from lockfile!", vim.log.levels.INFO, { title = "Plugin Updates" })
 		state.plugin_updates = get_plugin_updates()
 		state.has_plugin_updates = #state.plugin_updates > 0
 	end
@@ -506,12 +511,12 @@ function M.create_window()
 	vim.api.nvim_win_set_option(state.window, "cursorline", true)
 
 	local opts = { buffer = state.buffer, noremap = true, silent = true }
-	vim.keymap.set("n", config.keys.close, M.close, opts)
+	vim.keymap.set("n", config.keymap.close, M.close, opts)
 	vim.keymap.set("n", "<Esc>", M.close, opts)
-	vim.keymap.set("n", config.keys.update, update_repo, opts)
-	vim.keymap.set("n", config.keys.refresh, M.refresh, opts)
-	vim.keymap.set("n", config.keys.install_plugins, install_plugin_updates, opts)
-	vim.keymap.set("n", config.keys.update_all, update_dotfiles_and_plugins, opts)
+	vim.keymap.set("n", config.keymap.update, update_repo, opts)
+	vim.keymap.set("n", config.keymap.refresh, M.refresh, opts)
+	vim.keymap.set("n", config.keymap.install_plugins, install_plugin_updates, opts)
+	vim.keymap.set("n", config.keymap.update_all, update_dotfiles_and_plugins, opts)
 
 	vim.api.nvim_buf_set_option(state.buffer, "modifiable", false)
 	vim.api.nvim_buf_set_option(state.buffer, "filetype", "dotfiles-updater")
@@ -605,11 +610,11 @@ end
 local function generate_keybindings()
 	return {
 		"  Keybindings:",
-		"    " .. config.keys.update_all .. " - Update dotfiles + install plugin updates",
-		"    " .. config.keys.update .. " - Update dotfiles",
-		"    " .. config.keys.install_plugins .. " - Install plugin updates (:Lazy restore)",
-		"    " .. config.keys.refresh .. " - Refresh status",
-		"    " .. config.keys.close .. " - Close window",
+		"    " .. config.keymap.update_all .. " - Update dotfiles + install plugin updates",
+		"    " .. config.keymap.update .. " - Update dotfiles",
+		"    " .. config.keymap.install_plugins .. " - Install plugin updates (:Lazy restore)",
+		"    " .. config.keymap.refresh .. " - Refresh status",
+		"    " .. config.keymap.close .. " - Close window",
 		"",
 	}
 end
@@ -704,7 +709,13 @@ local function apply_highlighting(lines, status_line, keybindings_start, remote_
 		vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "String", status_line, 2, -1)
 	end
 
-	local keys = { config.keys.update_all, config.keys.update, config.keys.install_plugins, config.keys.refresh, config.keys.close }
+	local keys = {
+		config.keymap.update_all,
+		config.keymap.update,
+		config.keymap.install_plugins,
+		config.keymap.refresh,
+		config.keymap.close,
+	}
 	for i = 0, 4 do
 		local line_num = keybindings_start + i
 		vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "Statement", line_num, 4, 4 + #keys[i + 1])
@@ -736,14 +747,35 @@ local function apply_highlighting(lines, status_line, keybindings_start, remote_
 		-- Highlight plugin names and commits
 		for i = 1, #state.plugin_updates do
 			local line_num = plugin_update_line + i
-			vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "Directory", line_num, 2,
-				2 + #state.plugin_updates[i].name)
-			vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "Constant", line_num,
+			vim.api.nvim_buf_add_highlight(
+				state.buffer,
+				ns_id,
+				"Directory",
+				line_num,
+				2,
+				2 + #state.plugin_updates[i].name
+			)
+			vim.api.nvim_buf_add_highlight(
+				state.buffer,
+				ns_id,
+				"Constant",
+				line_num,
 				2 + #state.plugin_updates[i].name + 2,
-				2 + #state.plugin_updates[i].name + 2 + #state.plugin_updates[i].installed_commit)
-			vim.api.nvim_buf_add_highlight(state.buffer, ns_id, "Directory", line_num,
+				2 + #state.plugin_updates[i].name + 2 + #state.plugin_updates[i].installed_commit
+			)
+			vim.api.nvim_buf_add_highlight(
+				state.buffer,
+				ns_id,
+				"Directory",
+				line_num,
 				2 + #state.plugin_updates[i].name + 2 + #state.plugin_updates[i].installed_commit + 5,
-				2 + #state.plugin_updates[i].name + 2 + #state.plugin_updates[i].installed_commit + 5 + #state.plugin_updates[i].lockfile_commit)
+				2
+					+ #state.plugin_updates[i].name
+					+ 2
+					+ #state.plugin_updates[i].installed_commit
+					+ 5
+					+ #state.plugin_updates[i].lockfile_commit
+			)
 		end
 		plugin_update_line = plugin_update_line + #state.plugin_updates + 1
 	end
@@ -869,10 +901,28 @@ function M.close()
 	state.window = nil
 end
 
-function M.check_updates()
-	if vim.g.disable_neovim_dotfiles_check_updates then
-		return
+local function check_updates_silent()
+	local status = get_repo_status()
+
+	if status.error then
+		return false
 	end
+
+	state.current_branch = status.branch
+	state.ahead_count = status.ahead
+	state.behind_count = status.behind
+	state.last_check_time = os.time()
+
+	if status.behind > 0 then
+		state.needs_update = true
+		return true
+	else
+		state.needs_update = false
+		return false
+	end
+end
+
+function M.check_updates()
 	local status = get_repo_status()
 
 	if status.error then
@@ -883,6 +933,7 @@ function M.check_updates()
 	state.current_branch = status.branch
 	state.ahead_count = status.ahead
 	state.behind_count = status.behind
+	state.last_check_time = os.time()
 
 	if status.behind > 0 then
 		local message = config.notify.outdated.message
@@ -891,7 +942,9 @@ function M.check_updates()
 				.. status.ahead
 				.. " commit(s) and behind by "
 				.. status.behind
-				.. " commit(s). Press <leader>e to open the updater."
+				.. " commit(s). Press "
+				.. config.keymap.open
+				.. " to open the updater."
 		end
 
 		vim.notify(message, vim.log.levels.WARN, { title = config.notify.outdated.title })
@@ -899,12 +952,79 @@ function M.check_updates()
 	else
 		local message = config.notify.up_to_date.message
 		if status.ahead > 0 then
-			message = "Your branch is up to date with origin but ahead by " .. status.ahead .. " commits."
+			message = "Your branch is up to date! (but ahead by " .. status.ahead .. " commits)."
 		end
 
 		vim.notify(message, vim.log.levels.INFO, { title = config.notify.up_to_date.title })
 		state.needs_update = false
 	end
+end
+
+local function periodic_check()
+	if check_updates_silent() then
+		-- Only notify if updates are available
+		local message = config.notify.outdated.message
+		if state.ahead_count > 0 then
+			message = "Your branch is ahead by "
+				.. state.ahead_count
+				.. " commit(s) and behind by "
+				.. state.behind_count
+				.. " commit(s). Press "
+				.. config.keymap.open
+				.. " to open the updater."
+		end
+		vim.notify(message, vim.log.levels.WARN, { title = config.notify.outdated.title })
+	end
+end
+
+local function stop_periodic_check()
+	if state.periodic_timer then
+		state.periodic_timer:stop()
+		state.periodic_timer:close()
+		state.periodic_timer = nil
+	end
+end
+
+local function setup_periodic_check()
+	-- Cleanup on exit
+	vim.api.nvim_create_autocmd("VimLeavePre", {
+		group = vim.api.nvim_create_augroup("updater_cleanup", { clear = true }),
+		callback = stop_periodic_check,
+	})
+
+	if not config.periodic_check.enabled then
+		return
+	end
+
+	local frequency_ms = config.periodic_check.frequency_minutes * 60 * 1000
+
+	state.periodic_timer = vim.uv.new_timer()
+	state.periodic_timer:start(frequency_ms, frequency_ms, vim.schedule_wrap(periodic_check))
+end
+
+local function setup_startup_check()
+	if not config.check_updates_on_startup.enabled then
+		return
+	end
+
+	vim.api.nvim_create_autocmd("UIEnter", {
+		group = vim.api.nvim_create_augroup("updater_check_updates", { clear = true }),
+		callback = function()
+			vim.defer_fn(function()
+				M.check_updates()
+			end, 200)
+		end,
+	})
+end
+
+
+function M.start_periodic_check()
+	stop_periodic_check()
+	setup_periodic_check()
+end
+
+function M.stop_periodic_check()
+	stop_periodic_check()
 end
 
 function M.setup(opts)
@@ -913,16 +1033,15 @@ function M.setup(opts)
 	config = vim.tbl_deep_extend("force", config, opts)
 	cd_repo_path = "cd " .. config.repo_path .. " && "
 
-	vim.keymap.set(
-		"n",
-		config.keys.open,
-		M.open,
-		{ noremap = true, silent = true, desc = "Open Neovim Dotfiles Updater" }
-	)
+	vim.keymap.set("n", config.keymap.open, M.open, { noremap = true, silent = true, desc = "Open Neovim Dotfiles Updater" })
 
 	vim.api.nvim_create_user_command("UpdaterOpen", M.open, { desc = "Open the dotfiles updater" })
 	vim.api.nvim_create_user_command("UpdaterCheck", M.check_updates, { desc = "Check for dotfiles updates" })
+	vim.api.nvim_create_user_command("UpdaterStartChecking", M.start_periodic_check, { desc = "Start periodic update checking" })
+	vim.api.nvim_create_user_command("UpdaterStopChecking", M.stop_periodic_check, { desc = "Stop periodic update checking" })
+
+	setup_startup_check()
+	setup_periodic_check()
 end
 
 return M
-
