@@ -6,32 +6,32 @@ local function read_lockfile(lockfile_path)
 	if not lockfile_path or lockfile_path == "" then
 		return {}
 	end
-	
+
 	local file = io.open(lockfile_path, "r")
 	if not file then
 		-- Lockfile doesn't exist, which is normal for fresh installs
 		return {}
 	end
-	
+
 	local content = file:read("*a")
 	file:close()
-	
+
 	if not content or content == "" then
 		return {}
 	end
-	
+
 	local ok, data = pcall(vim.json.decode, content)
 	if not ok then
 		-- Log error but don't crash - malformed lockfile
 		vim.notify("Warning: Could not parse lazy-lock.json: " .. (data or "invalid JSON"), vim.log.levels.WARN)
 		return {}
 	end
-	
+
 	if type(data) ~= "table" then
 		vim.notify("Warning: lazy-lock.json does not contain expected format", vim.log.levels.WARN)
 		return {}
 	end
-	
+
 	return data
 end
 
@@ -87,7 +87,7 @@ function M.get_plugin_updates(config)
 
 	local lockfile_path = config.repo_path .. "/lazy-lock.json"
 	local lockfile_data = read_lockfile(lockfile_path)
-	
+
 	if not lockfile_data or type(lockfile_data) ~= "table" then
 		-- read_lockfile already handles errors, just return empty updates
 		return plugin_updates
@@ -118,7 +118,7 @@ function M.install_plugin_updates(config, render_callback)
 		vim.notify("Config is required for plugin updates", vim.log.levels.ERROR, { title = "Plugin Updates" })
 		return
 	end
-	
+
 	if not config.repo_path or config.repo_path == "" then
 		vim.notify("Invalid repository path for plugin updates", vim.log.levels.ERROR, { title = "Plugin Updates" })
 		return
@@ -135,7 +135,9 @@ function M.install_plugin_updates(config, render_callback)
 
 	Status.set_installing_plugins(true)
 	Spinner.start_loading_spinner(render_callback)
-	if render_callback then render_callback("normal") end
+	if render_callback then
+		render_callback("normal")
+	end
 
 	local cmd = "cd "
 		.. vim.fn.shellescape(config.repo_path)
@@ -147,7 +149,7 @@ function M.install_plugin_updates(config, render_callback)
 		vim.notify("Failed to execute plugin restore command", vim.log.levels.ERROR, { title = "Plugin Updates" })
 		return
 	end
-	
+
 	local result = handle:read("*a")
 	local success = handle:close()
 
@@ -167,7 +169,10 @@ function M.install_plugin_updates(config, render_callback)
 		Status.set_recently_updated_plugins(true)
 	end
 
-	if render_callback then render_callback("normal") end
+	if render_callback then
+		render_callback("normal")
+	end
 end
 
 return M
+

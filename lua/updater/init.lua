@@ -35,16 +35,24 @@ function M.open()
 	end
 
 	Window.create_window(config)
-	
+
 	-- Setup keymaps with callbacks
 	Window.setup_keymaps(config, {
 		close = M.close,
-		update = function() Operations.update_repo(config, render_callback) end,
-		refresh = function() Operations.refresh(config, render_callback) end,
-		install_plugins = function() Plugins.install_plugin_updates(config, render_callback) end,
-		update_all = function() Operations.update_dotfiles_and_plugins(config, render_callback) end,
+		update = function()
+			Operations.update_repo(config, render_callback)
+		end,
+		refresh = function()
+			Operations.refresh(config, render_callback)
+		end,
+		install_plugins = function()
+			Plugins.install_plugin_updates(config, render_callback)
+		end,
+		update_all = function()
+			Operations.update_dotfiles_and_plugins(config, render_callback)
+		end,
 	})
-	
+
 	Window.setup_autocmds(M.close)
 
 	if Status.has_cached_data() then
@@ -118,15 +126,28 @@ function M.setup(opts)
 		vim.notify(error_msg, vim.log.levels.ERROR, { title = "Updater Configuration" })
 		return
 	end
-	
+
 	config = setup_config
 
-	vim.keymap.set("n", config.keymap.open, M.open, { noremap = true, silent = true, desc = "Open Neovim Dotfiles Updater" })
+	vim.keymap.set(
+		"n",
+		config.keymap.open,
+		M.open,
+		{ noremap = true, silent = true, desc = "Open Neovim Dotfiles Updater" }
+	)
 
 	vim.api.nvim_create_user_command("UpdaterOpen", M.open, { desc = "Open the dotfiles updater" })
 	vim.api.nvim_create_user_command("UpdaterCheck", M.check_updates, { desc = "Check for dotfiles updates" })
-	vim.api.nvim_create_user_command("UpdaterStartChecking", M.start_periodic_check, { desc = "Start periodic update checking" })
-	vim.api.nvim_create_user_command("UpdaterStopChecking", M.stop_periodic_check, { desc = "Stop periodic update checking" })
+	vim.api.nvim_create_user_command(
+		"UpdaterStartChecking",
+		M.start_periodic_check,
+		{ desc = "Start periodic update checking" }
+	)
+	vim.api.nvim_create_user_command(
+		"UpdaterStopChecking",
+		M.stop_periodic_check,
+		{ desc = "Stop periodic update checking" }
+	)
 	vim.api.nvim_create_user_command("UpdaterHealth", M.health_check, { desc = "Run updater health check" })
 
 	-- Load debug module automatically if enabled in config

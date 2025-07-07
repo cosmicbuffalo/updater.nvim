@@ -1,6 +1,5 @@
 local M = {}
 
-
 function M.create_render_callback(config)
 	return function(mode)
 		local Window = require("updater.window")
@@ -35,3 +34,4 @@ function M.generate_up_to_date_message(config, status)
 end
 
 return M
+

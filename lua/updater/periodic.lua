@@ -48,9 +48,13 @@ function M.setup_periodic_check(config)
 
 	local timer = vim.uv.new_timer()
 	Status.set_periodic_timer(timer)
-	timer:start(frequency_ms, frequency_ms, vim.schedule_wrap(function()
-		periodic_check(config)
-	end))
+	timer:start(
+		frequency_ms,
+		frequency_ms,
+		vim.schedule_wrap(function()
+			periodic_check(config)
+		end)
+	)
 end
 
 function M.setup_startup_check(config, check_updates_callback)
@@ -69,3 +73,4 @@ function M.setup_startup_check(config, check_updates_callback)
 end
 
 return M
+

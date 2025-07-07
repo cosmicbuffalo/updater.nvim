@@ -111,13 +111,7 @@ function M.render(config)
 	end
 
 	vim.api.nvim_buf_set_lines(Status.state.buffer, 0, -1, false, lines)
-	UI.apply_highlighting(
-    Status.state,
-    config,
-    status_line,
-    keybindings_start,
-    restart_reminder_line
-  )
+	UI.apply_highlighting(Status.state, config, status_line, keybindings_start, restart_reminder_line)
 
 	vim.api.nvim_buf_set_option(Status.state.buffer, "modifiable", false)
 	vim.api.nvim_win_set_height(Status.state.window, math.min(#lines + 1, Constants.MAX_WINDOW_HEIGHT_LINES))

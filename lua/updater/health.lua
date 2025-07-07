@@ -47,8 +47,7 @@ local function check_lazy_nvim()
 	return create_health_result(
 		"Lazy.nvim",
 		lazy_ok and "✓ OK" or "⚠ INFO",
-		lazy_ok and "lazy.nvim available - plugin updates enabled"
-			or "lazy.nvim not found - plugin updates disabled"
+		lazy_ok and "lazy.nvim available - plugin updates enabled" or "lazy.nvim not found - plugin updates disabled"
 	)
 end
 
@@ -66,7 +65,7 @@ local function check_remote_connectivity(config)
 	local remote_cmd = "cd " .. vim.fn.shellescape(config.repo_path) .. " && git ls-remote --exit-code origin HEAD"
 	local remote_handle = io.popen(remote_cmd .. " 2>/dev/null")
 	local remote_ok = false
-	
+
 	if remote_handle then
 		local result = remote_handle:read("*a")
 		remote_handle:close()
@@ -76,15 +75,14 @@ local function check_remote_connectivity(config)
 	return create_health_result(
 		"Remote Connectivity",
 		remote_ok and "✓ OK" or "⚠ WARN",
-		remote_ok and "Can connect to remote repository"
-			or "Cannot connect to remote - check network/credentials"
+		remote_ok and "Can connect to remote repository" or "Cannot connect to remote - check network/credentials"
 	)
 end
 
 local function check_debug_module(config)
 	local debug_status = "not loaded"
 	local debug_check_status = "ℹ INFO"
-	
+
 	if config.debug.enabled then
 		local ok, debug_module = pcall(require, "updater.debug")
 		if ok and debug_module.is_loaded() then
@@ -96,11 +94,7 @@ local function check_debug_module(config)
 		end
 	end
 
-	return create_health_result(
-		"Debug Module",
-		debug_check_status,
-		"Debug mode: " .. debug_status
-	)
+	return create_health_result("Debug Module", debug_check_status, "Debug mode: " .. debug_status)
 end
 
 -- Run all health checks and return results
@@ -114,14 +108,14 @@ local function run_all_checks(config)
 		check_remote_connectivity(config),
 		check_debug_module(config),
 	}
-	
+
 	return checks
 end
 
 -- Display health check results in a buffer
 local function display_health_results(health_results)
 	local lines = { "# updater.nvim Health Check", "" }
-	
+
 	for _, item in ipairs(health_results) do
 		table.insert(lines, string.format("## %s: %s", item.check, item.status))
 		table.insert(lines, "   " .. item.message)
@@ -145,3 +139,4 @@ function M.health_check(config)
 end
 
 return M
+

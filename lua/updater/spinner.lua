@@ -2,7 +2,6 @@ local Constants = require("updater.constants")
 local Status = require("updater.status")
 local M = {}
 
-
 function M.start_loading_spinner(render_callback)
 	if Status.state.loading_spinner_timer then
 		return
@@ -35,3 +34,4 @@ function M.stop_loading_spinner()
 end
 
 return M
+
