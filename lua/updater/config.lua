@@ -69,7 +69,7 @@ end
 
 local function validate_config(cfg)
 	local errors = {}
-	
+
 	local validators = {
 		validate_repo_path,
 		validate_timeout_utility,
@@ -78,14 +78,14 @@ local function validate_config(cfg)
 		validate_log_count,
 		validate_main_branch,
 	}
-	
+
 	for _, validator in ipairs(validators) do
 		local validator_errors = validator(cfg)
 		for _, error in ipairs(validator_errors) do
 			table.insert(errors, error)
 		end
 	end
-	
+
 	return errors
 end
 
@@ -183,28 +183,28 @@ function M.setup_config(opts)
 			refresh_delay_ms = 3000,
 		},
 	}
-	
+
 	local merged_config = vim.tbl_deep_extend("force", default_config, opts or {})
-	
+
 	local config_errors = validate_config(merged_config)
 	if #config_errors > 0 then
 		local error_msg = "updater.nvim configuration errors:\n" .. table.concat(config_errors, "\n")
 		return nil, error_msg
 	end
-	
+
 	local sanitized_path, sanitize_err = sanitize_repo_path(merged_config.repo_path)
 	if not sanitized_path then
 		return nil, "updater.nvim: " .. sanitize_err
 	end
-	
+
 	local is_git_repo, git_err = Git.validate_git_repository(sanitized_path)
 	if not is_git_repo then
 		return nil, "updater.nvim: " .. git_err
 	end
-	
+
 	merged_config.repo_path = sanitized_path
 	merged_config = sanitize_refresh_delay(merged_config)
-	
+
 	return merged_config
 end
 

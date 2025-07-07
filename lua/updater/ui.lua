@@ -61,7 +61,7 @@ local function generate_branch_status(state, config)
 			)
 		end
 	end
-	
+
 	return lines
 end
 
@@ -93,15 +93,15 @@ end
 
 function M.generate_header(state, config)
 	local header = { "" }
-	
+
 	-- Add branch status lines
 	local branch_lines = generate_branch_status(state, config)
 	for _, line in ipairs(branch_lines) do
 		table.insert(header, line)
 	end
-	
+
 	table.insert(header, "")
-	
+
 	-- Add status message
 	table.insert(header, generate_status_message(state))
 	table.insert(header, "")
@@ -172,7 +172,7 @@ function M.generate_restart_reminder_section(state)
 	if state.recently_updated_dotfiles or state.recently_updated_plugins then
 		table.insert(restart_info, "  ⚠️  Restart Recommended")
 		table.insert(restart_info, "  " .. Constants.SEPARATOR_LINE)
-		
+
 		local updated_items = {}
 		if state.recently_updated_dotfiles then
 			table.insert(updated_items, "dotfiles")
@@ -180,9 +180,9 @@ function M.generate_restart_reminder_section(state)
 		if state.recently_updated_plugins then
 			table.insert(updated_items, "plugins")
 		end
-		
+
 		local items_text = table.concat(updated_items, " and ")
-		table.insert(restart_info, "  " .. items_text:sub(1,1):upper() .. items_text:sub(2) .. " have been updated.")
+		table.insert(restart_info, "  " .. items_text:sub(1, 1):upper() .. items_text:sub(2) .. " have been updated.")
 		table.insert(restart_info, "  You may need to restart Neovim for all changes to take effect.")
 		table.insert(restart_info, "  ")
 		table.insert(restart_info, "  💡 Tip: Save your session, restart nvim, then load your session")
@@ -244,7 +244,7 @@ function M.generate_loading_state(state, config)
 		"",
 		"  Loading repository information...",
 		"  This may take a moment if checking remote updates.",
-		""
+		"",
 	}
 end
 
@@ -263,7 +263,8 @@ local function highlight_header(buffer, ns_id)
 end
 
 local function highlight_status(buffer, ns_id, state, status_line)
-	local status_hl_group = (state.is_updating or state.is_refreshing or state.is_installing_plugins) and "WarningMsg" or "String"
+	local status_hl_group = (state.is_updating or state.is_refreshing or state.is_installing_plugins) and "WarningMsg"
+		or "String"
 	add_highlight(buffer, ns_id, status_hl_group, status_line, 2, -1)
 end
 
@@ -288,7 +289,7 @@ local function highlight_remote_commits(buffer, ns_id, state, config)
 	if #state.remote_commits > 0 then
 		local title_pattern = "Commits on origin/" .. config.main_branch .. " not in your branch:"
 		local section_line = find_section_line(buffer, vim.pesc(title_pattern))
-		
+
 		if section_line then
 			-- Highlight section title
 			add_highlight(buffer, ns_id, "Title", section_line, 2, -1)
@@ -297,7 +298,7 @@ local function highlight_remote_commits(buffer, ns_id, state, config)
 			local commit_start_line = section_line + 2
 			for i = 1, #state.remote_commits do
 				local line_num = commit_start_line + i - 1
-				add_highlight(buffer, ns_id, "Statement", line_num, 2, 3)  -- Status indicator
+				add_highlight(buffer, ns_id, "Statement", line_num, 2, 3) -- Status indicator
 				add_highlight(buffer, ns_id, "Directory", line_num, 4, 13) -- Commit hash
 				add_highlight(buffer, ns_id, "Comment", line_num, state.remote_commits[i].message:len() + 17, -1) -- Author/date
 			end
@@ -309,7 +310,7 @@ local function highlight_plugin_updates(buffer, ns_id, state)
 	if #state.plugin_updates > 0 then
 		local title_pattern = "Plugin updates available:"
 		local section_line = find_section_line(buffer, vim.pesc(title_pattern))
-		
+
 		if section_line then
 			-- Highlight section title
 			add_highlight(buffer, ns_id, "Title", section_line, 2, -1)
@@ -324,7 +325,7 @@ local function highlight_plugin_updates(buffer, ns_id, state)
 				local installed_end = installed_start + #plugin.installed_commit
 				local lockfile_start = installed_end + 5
 				local lockfile_end = lockfile_start + #plugin.lockfile_commit
-				
+
 				add_highlight(buffer, ns_id, "Directory", line_num, 2, name_end) -- Plugin name
 				add_highlight(buffer, ns_id, "Constant", line_num, installed_start, installed_end) -- Installed commit
 				add_highlight(buffer, ns_id, "Directory", line_num, lockfile_start, lockfile_end) -- Lockfile commit
@@ -335,21 +336,21 @@ end
 
 local function highlight_commit_log(buffer, ns_id, state, config)
 	-- Search for commit log section by title pattern
-	local title_pattern = state.log_type == "remote" 
-		and "Commits from origin/" .. config.main_branch .. " not in your branch:"
+	local title_pattern = state.log_type == "remote"
+			and "Commits from origin/" .. config.main_branch .. " not in your branch:"
 		or "Local commits on " .. state.current_branch .. ":"
-	
+
 	local section_line = find_section_line(buffer, vim.pesc(title_pattern))
 	if not section_line then
 		return -- Section not found
 	end
-	
+
 	-- Highlight the section title
 	add_highlight(buffer, ns_id, "Title", section_line, 2, -1)
-	
+
 	-- Start highlighting commits after the title and separator line
 	local commit_start_line = section_line + 2
-	
+
 	for i, commit in ipairs(state.commits) do
 		local line_num = commit_start_line + i - 1
 		local line = vim.api.nvim_buf_get_lines(buffer, line_num, line_num + 1, false)
@@ -357,19 +358,19 @@ local function highlight_commit_log(buffer, ns_id, state, config)
 			local line_content = line[1]
 			local indicator = vim.fn.strcharpart(line_content, 2, 1)
 			local is_current = indicator == "→"
-			
+
 			-- Line format: "  [indicator][hash] - [message] ([author], [date])"
 			local hash_start = 4
 			local hash_end = hash_start + #commit.hash
-			
+
 			if is_current then
 				-- Highlight current commit indicator
 				add_highlight(buffer, ns_id, "String", line_num, 2, 2 + 2)
-        hash_end = hash_end + 2
+				hash_end = hash_end + 2
 			end
-			
+
 			add_highlight(buffer, ns_id, "Directory", line_num, hash_start, hash_end)
-			
+
 			local author_section_start = string.find(line_content, " %(")
 			if author_section_start then
 				add_highlight(buffer, ns_id, "Comment", line_num, author_section_start, -1)

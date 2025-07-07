@@ -99,7 +99,8 @@ local function get_remote_commit(config, repo_path)
 		return nil
 	end
 
-	local result, _fetch_err = M.execute_git_command("git rev-parse @{u}", "status", "Git status check", config, repo_path)
+	local result, _fetch_err =
+		M.execute_git_command("git rev-parse @{u}", "status", "Git status check", config, repo_path)
 	return result
 end
 
@@ -107,7 +108,8 @@ function M.get_current_branch(config, repo_path)
 	if not config or not repo_path then
 		return "unknown"
 	end
-	local result, err = M.execute_git_command("git rev-parse --abbrev-ref HEAD", "status", "Git branch check", config, repo_path)
+	local result, err =
+		M.execute_git_command("git rev-parse --abbrev-ref HEAD", "status", "Git branch check", config, repo_path)
 	return result or "unknown"
 end
 
@@ -141,13 +143,19 @@ local function get_latest_remote_commit(config, repo_path)
 		return nil
 	end
 
-	local hash, hash_err = M.execute_git_command("git rev-parse origin/" .. config.main_branch, "status", nil, config, repo_path)
+	local hash, hash_err =
+		M.execute_git_command("git rev-parse origin/" .. config.main_branch, "status", nil, config, repo_path)
 	if not hash then
 		return nil
 	end
 
-	local details, details_err =
-		M.execute_git_command('git show -s --format="%h|%s|%an|%ar" ' .. hash, "log", "Git log operation", config, repo_path)
+	local details, details_err = M.execute_git_command(
+		'git show -s --format="%h|%s|%an|%ar" ' .. hash,
+		"log",
+		"Git log operation",
+		config,
+		repo_path
+	)
 	if not details then
 		return nil
 	end
@@ -251,8 +259,9 @@ end
 
 local function fetch_updates(config, repo_path)
 	local cd_cmd = "cd " .. vim.fn.shellescape(repo_path) .. " && "
-	local _fetch_result, fetch_err = execute_command(cd_cmd .. "git fetch origin " .. config.main_branch, "fetch", config)
-	
+	local _fetch_result, fetch_err =
+		execute_command(cd_cmd .. "git fetch origin " .. config.main_branch, "fetch", config)
+
 	if fetch_err then
 		local error_msg
 		if fetch_err == "timeout" then
@@ -264,14 +273,14 @@ local function fetch_updates(config, repo_path)
 		end
 		return false, error_msg
 	end
-	
+
 	return true, nil
 end
 
 local function execute_update_command(config, repo_path, current_branch)
 	local cd_cmd = "cd " .. vim.fn.shellescape(repo_path) .. " && "
 	local cmd, timeout_key
-	
+
 	if current_branch == config.main_branch then
 		cmd = "git pull origin " .. config.main_branch
 		timeout_key = "pull"
@@ -279,7 +288,7 @@ local function execute_update_command(config, repo_path, current_branch)
 		cmd = "git merge origin/" .. config.main_branch .. " --no-edit"
 		timeout_key = "merge"
 	end
-	
+
 	local result, err = execute_command(cd_cmd .. cmd, timeout_key, config)
 	return result, err, timeout_key
 end
@@ -321,10 +330,10 @@ function M.update_repo(config, repo_path, current_branch)
 	if not fetch_success then
 		return false, fetch_error
 	end
-	
+
 	-- Step 2: Execute update command
 	local result, err, timeout_key = execute_update_command(config, repo_path, current_branch)
-	
+
 	-- Step 3: Handle result
 	return handle_update_result(config, current_branch, result, err, timeout_key)
 end

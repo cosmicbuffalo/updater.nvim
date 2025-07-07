@@ -17,7 +17,8 @@ end
 
 -- Check if debug mode should override operation
 local function should_use_debug_mode(config)
-	return config.debug.enabled and (config.debug.simulate_updates.dotfiles > 0 or config.debug.simulate_updates.plugins > 0)
+	return config.debug.enabled
+		and (config.debug.simulate_updates.dotfiles > 0 or config.debug.simulate_updates.plugins > 0)
 end
 
 function M.refresh_data(config)
@@ -33,15 +34,24 @@ function M.refresh_data(config)
 		Status.state.ahead_count = status.ahead
 		Status.state.behind_count = status.behind
 		Status.state.remote_commits = Git.get_remote_commits_not_in_local(config, config.repo_path, status.branch)
-		Status.state.commits_in_branch =
-			Git.are_commits_in_branch(Status.state.remote_commits, Status.state.current_branch, config, config.repo_path)
+		Status.state.commits_in_branch = Git.are_commits_in_branch(
+			Status.state.remote_commits,
+			Status.state.current_branch,
+			config,
+			config.repo_path
+		)
 		Status.state.needs_update = #Status.state.remote_commits > 0
 	else
 		Status.state.needs_update = false
 	end
 
-	Status.state.commits, Status.state.log_type =
-		Git.get_commit_log(config, config.repo_path, Status.state.current_branch, Status.state.ahead_count, Status.state.behind_count)
+	Status.state.commits, Status.state.log_type = Git.get_commit_log(
+		config,
+		config.repo_path,
+		Status.state.current_branch,
+		Status.state.ahead_count,
+		Status.state.behind_count
+	)
 	Status.state.plugin_updates = Plugins.get_plugin_updates(config)
 	Status.state.has_plugin_updates = #Status.state.plugin_updates > 0
 	Status.state.last_check_time = os.time()
@@ -77,7 +87,9 @@ end
 function M.update_repo(config, render_callback)
 	Status.set_updating(true)
 	Spinner.start_loading_spinner(render_callback)
-	if render_callback then render_callback("normal") end
+	if render_callback then
+		render_callback("normal")
+	end
 
 	local branch = Git.get_current_branch(config, config.repo_path)
 	local success, message = Git.update_repo(config, config.repo_path, branch)
@@ -95,7 +107,9 @@ end
 
 function M.update_dotfiles_and_plugins(config, render_callback)
 	Status.set_updating(true)
-	if render_callback then render_callback("normal") end
+	if render_callback then
+		render_callback("normal")
+	end
 
 	M.update_repo(config, render_callback)
 
@@ -114,3 +128,4 @@ function M.check_updates_silent(config)
 end
 
 return M
+

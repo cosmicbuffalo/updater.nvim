@@ -7,12 +7,12 @@ local state = {
 	buffer = nil,
 	window = nil,
 	is_initial_load = false,
-	
+
 	-- Operation states
 	is_updating = false,
 	is_refreshing = false,
 	is_installing_plugins = false,
-	
+
 	-- Git status
 	current_branch = "unknown",
 	current_commit = nil,
@@ -20,25 +20,25 @@ local state = {
 	behind_count = 0,
 	needs_update = false,
 	last_check_time = nil,
-	
+
 	-- Commit data
 	commits = {},
 	remote_commits = {},
 	commits_in_branch = {},
 	log_type = "local",
-	
+
 	-- Plugin data
 	plugin_updates = {},
 	has_plugin_updates = false,
-	
+
 	-- Restart reminder state
 	recently_updated_dotfiles = false,
 	recently_updated_plugins = false,
-	
+
 	-- Spinner state
 	loading_spinner_timer = nil,
 	loading_spinner_frame = 1,
-	
+
 	-- Periodic check state
 	periodic_timer = nil,
 }
@@ -48,7 +48,6 @@ function M.get_state()
 	-- Return a read-only copy to prevent direct mutations
 	return vim.tbl_deep_extend("force", {}, state)
 end
-
 
 function M.get_state_value(key)
 	return state[key]
@@ -280,19 +279,19 @@ function M.reset_all()
 		window = state.window,
 		is_open = state.is_open,
 	}
-	
+
 	state = {
 		-- Window/UI state
 		is_open = preserved_config.is_open,
 		buffer = preserved_config.buffer,
 		window = preserved_config.window,
 		is_initial_load = false,
-		
+
 		-- Operation states
 		is_updating = false,
 		is_refreshing = false,
 		is_installing_plugins = false,
-		
+
 		-- Git status
 		current_branch = "unknown",
 		current_commit = nil,
@@ -300,28 +299,29 @@ function M.reset_all()
 		behind_count = 0,
 		needs_update = false,
 		last_check_time = nil,
-		
+
 		-- Commit data
 		commits = {},
 		remote_commits = {},
 		commits_in_branch = {},
 		log_type = "local",
-		
+
 		-- Plugin data
 		plugin_updates = {},
 		has_plugin_updates = false,
-		
+
 		-- Restart reminder state
 		recently_updated_dotfiles = false,
 		recently_updated_plugins = false,
-		
+
 		-- Spinner state
 		loading_spinner_timer = nil,
 		loading_spinner_frame = 1,
-		
+
 		-- Periodic check state
 		periodic_timer = nil,
 	}
 end
 
 return M
+

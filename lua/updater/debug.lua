@@ -27,7 +27,7 @@ function M.toggle_debug_mode()
 			config.debug.simulate_updates.dotfiles = 2
 			config.debug.simulate_updates.plugins = 3
 		end
-		
+
 		local dotfiles = config.debug.simulate_updates.dotfiles
 		local plugins = config.debug.simulate_updates.plugins
 		vim.notify(
@@ -63,7 +63,11 @@ function M.simulate_updates(dotfile_updates, plugin_updates)
 	config.debug.simulate_updates.plugins = plugin_updates
 
 	vim.notify(
-		string.format("Updater debug mode: simulating %d dotfile update(s), %d plugin update(s)", dotfile_updates, plugin_updates),
+		string.format(
+			"Updater debug mode: simulating %d dotfile update(s), %d plugin update(s)",
+			dotfile_updates,
+			plugin_updates
+		),
 		vim.log.levels.INFO,
 		{ title = "Updater Debug" }
 	)
@@ -187,24 +191,27 @@ local function simulate_refresh_data(config_ref)
 	Status.state.has_plugin_updates = plugins_count > 0
 end
 
-
 local commands_registered = false
 
 function M.register_commands()
 	if commands_registered then
 		return
 	end
-	
+
 	vim.api.nvim_create_user_command("UpdaterDebugSimulate", function(cmd_opts)
 		local args = vim.split(cmd_opts.args, "%s+")
 		local dotfiles = tonumber(args[1])
 		local plugins = tonumber(args[2])
-		
+
 		if not dotfiles or not plugins then
-			vim.notify("Usage: UpdaterDebugSimulate <dotfiles> <plugins>", vim.log.levels.ERROR, { title = "Updater Debug" })
+			vim.notify(
+				"Usage: UpdaterDebugSimulate <dotfiles> <plugins>",
+				vim.log.levels.ERROR,
+				{ title = "Updater Debug" }
+			)
 			return
 		end
-		
+
 		M.simulate_updates(dotfiles, plugins)
 	end, {
 		nargs = "+",
@@ -212,7 +219,7 @@ function M.register_commands()
 	})
 
 	vim.api.nvim_create_user_command("UpdaterDebugDisable", M.disable_debug_mode, { desc = "Disable debug mode" })
-	
+
 	commands_registered = true
 end
 
@@ -224,11 +231,11 @@ function M.get_status()
 	if not config then
 		return "not loaded"
 	end
-	
+
 	if config.debug.enabled then
 		local sim_dotfiles = config.debug.simulate_updates.dotfiles
 		local sim_plugins = config.debug.simulate_updates.plugins
-		
+
 		if sim_dotfiles > 0 or sim_plugins > 0 then
 			return string.format("enabled (simulating %dd %dp)", sim_dotfiles, sim_plugins)
 		else

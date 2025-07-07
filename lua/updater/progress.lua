@@ -25,12 +25,12 @@ end
 
 function M.handle_refresh_progress(progress_title, initial_message)
 	local progress = nil
-	
+
 	progress = M.create_fidget_progress("Updater", progress_title)
 	if progress then
 		progress:report({ message = initial_message })
 	end
-	
+
 	return {
 		progress = progress,
 		update_fetching = function()
@@ -52,8 +52,9 @@ function M.handle_refresh_progress(progress_title, initial_message)
 					end, Constants.PROGRESS_FINISH_DURATION)
 				end
 			end
-		end
+		end,
 	}
 end
 
 return M
+
