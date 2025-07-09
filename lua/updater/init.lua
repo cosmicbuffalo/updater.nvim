@@ -121,6 +121,11 @@ function M.health_check()
 end
 
 function M.setup(opts)
+	-- Disable plugin in headless mode
+	if vim.fn.has('nvim') == 1 and (vim.g.headless or vim.v.argv[2] == '--headless' or vim.v.argv[3] == '--headless') then
+		return
+	end
+
 	local setup_config, error_msg = Config.setup_config(opts)
 	if not setup_config then
 		vim.notify(error_msg, vim.log.levels.ERROR, { title = "Updater Configuration" })
