@@ -133,7 +133,7 @@ function M.install_plugin_updates(config, render_callback)
 		return
 	end
 
-	Status.set_installing_plugins(true)
+	Status.state.is_installing_plugins = true
 	Spinner.start_loading_spinner(render_callback)
 	if render_callback then
 		render_callback("normal")
@@ -144,7 +144,7 @@ function M.install_plugin_updates(config, render_callback)
 		.. " && nvim --headless +'lua require(\"lazy\").restore({wait=true})' +qa"
 	local handle = io.popen(cmd)
 	if not handle then
-		Status.set_installing_plugins(false)
+		Status.state.is_installing_plugins = false
 		Spinner.stop_loading_spinner()
 		vim.notify("Failed to execute plugin restore command", vim.log.levels.ERROR, { title = "Plugin Updates" })
 		return
@@ -153,7 +153,7 @@ function M.install_plugin_updates(config, render_callback)
 	local result = handle:read("*a")
 	local success = handle:close()
 
-	Status.set_installing_plugins(false)
+	Status.state.is_installing_plugins = false
 	Spinner.stop_loading_spinner()
 
 	if not result or result:match("error") or result:match("Error") then
@@ -166,7 +166,7 @@ function M.install_plugin_updates(config, render_callback)
 		vim.notify("Successfully restored plugins from lockfile!", vim.log.levels.INFO, { title = "Plugin Updates" })
 		Status.state.plugin_updates = M.get_plugin_updates(config)
 		Status.state.has_plugin_updates = #Status.state.plugin_updates > 0
-		Status.set_recently_updated_plugins(true)
+		Status.state.recently_updated_plugins = true
 	end
 
 	if render_callback then

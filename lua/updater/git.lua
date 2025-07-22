@@ -6,6 +6,23 @@ local function execute_command(cmd, timeout_key, config)
 	timeout_key = timeout_key or "default"
 	local timeout = config.timeouts[timeout_key] or config.timeouts.default
 
+	-- Check if timeout utility is available
+	if vim.fn.executable(config.timeout_utility) ~= 1 then
+		vim.notify(
+			string.format("Warning: %s command not found. Running command without timeout (may hang)", config.timeout_utility),
+			vim.log.levels.WARN,
+			{ title = "Updater.nvim" }
+		)
+		-- Fall back to running command without timeout
+		local handle = io.popen(cmd .. " 2>&1")
+		if not handle then
+			return nil, "Failed to execute command"
+		end
+		local result = handle:read("*a")
+		handle:close()
+		return result, nil
+	end
+
 	local timeout_cmd = string.format(
 		"%s %ds bash -c %s || (exit_code=$?; if [ $exit_code -eq %d ]; then echo 'COMMAND_TIMED_OUT'; exit %d; else exit $exit_code; fi)",
 		config.timeout_utility,
