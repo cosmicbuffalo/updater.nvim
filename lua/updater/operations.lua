@@ -41,7 +41,7 @@ local function update_git_repo(config, operation_name)
 	
 	if success then
 		Status.state.needs_update = false
-		Status.set_recently_updated_dotfiles(true)
+		Status.state.recently_updated_dotfiles = true
 	else
 		handle_error(operation_name, message or "Git update failed")
 	end
@@ -49,41 +49,58 @@ local function update_git_repo(config, operation_name)
 	return success
 end
 
--- Operation wrapper with common setup/cleanup and progress
-local function with_operation(operation_name, status_setter, cleanup_fn, progress_config)
-	return function(config, render_callback, operation_fn)
-		status_setter(true)
-		Spinner.start_loading_spinner(render_callback)
-		safe_callback(render_callback)
+-- Simple operation runner with common setup/cleanup and progress
+local function run_operation(options, render_callback)
+	-- Set operation status
+	if options.status_field then
+		Status.state[options.status_field] = true
+	end
+	
+	Spinner.start_loading_spinner(render_callback)
+	safe_callback(render_callback)
 
-		-- Setup progress notification if config provided
-		local progress_handler = nil
-		if progress_config then
-			progress_handler = Progress.handle_refresh_progress(progress_config.title, progress_config.initial_message)
-		end
+	-- Setup progress notification if config provided
+	local progress_handler = nil
+	if options.progress then
+		progress_handler = Progress.handle_refresh_progress(
+			options.progress.title, 
+			options.progress.message
+		)
+	end
 
-		local success, error_msg = pcall(operation_fn)
+	-- Handle delayed execution (for refresh operation)
+	local execute_operation = function()
+		local success, error_msg = pcall(options.operation)
 
 		-- Always cleanup, regardless of success
-		cleanup_fn()
+		if options.status_field then
+			Status.state[options.status_field] = false
+		end
 		Spinner.stop_loading_spinner()
 
 		if not success then
-			handle_error(operation_name, error_msg)
+			handle_error(options.name, error_msg)
 			if progress_handler then
-				progress_handler.finish(false) -- Show failure state
+				progress_handler.finish(false)
 			end
 		else
 			-- Finish progress with success state if provided
-			if progress_handler and progress_config.success_check then
-				progress_handler.finish(progress_config.success_check())
+			if progress_handler and options.progress and options.progress.success_check then
+				progress_handler.finish(options.progress.success_check())
 			elseif progress_handler then
-				progress_handler.finish(true) -- Default to success
+				progress_handler.finish(true)
 			end
 		end
 
 		safe_callback(render_callback)
 		return success
+	end
+
+	-- Execute immediately or with delay
+	if options.delay_ms then
+		vim.defer_fn(execute_operation, options.delay_ms)
+	else
+		return execute_operation()
 	end
 end
 
@@ -135,73 +152,55 @@ local function refresh_data(config)
 end
 
 function M.refresh(config, render_callback)
-	Status.set_refreshing(true)
-	Spinner.start_loading_spinner(render_callback)
-
-	local progress_handler = Progress.handle_refresh_progress("Updater", "Checking for updates...")
-	safe_callback(render_callback)
-
-	local delay = config.refresh.delay_ms
-
-	vim.defer_fn(function()
-		local success, error_msg = pcall(function()
+	run_operation({
+		name = "refresh",
+		status_field = "is_refreshing",
+		delay_ms = config.refresh.delay_ms,
+		progress = {
+			title = "Updater",
+			message = "Checking for updates...",
+			success_check = function() 
+				return Status.state.needs_update or Status.state.has_plugin_updates
+			end
+		},
+		operation = function()
 			refresh_data(config)
-		end)
-
-		-- Always cleanup, regardless of success
-		Status.set_refreshing(false)
-		Status.reset_initial_load()
-		Spinner.stop_loading_spinner()
-
-		if not success then
-			handle_error("refresh", error_msg)
-			progress_handler.finish(false)
-		else
-			progress_handler.finish(Status.state.needs_update or Status.state.has_plugin_updates)
+			-- Reset initial load flag after refresh
+			Status.state.is_initial_load = false
 		end
-
-		safe_callback(render_callback)
-	end, delay)
+	}, render_callback)
 end
 
 function M.update_repo(config, render_callback)
-	with_operation(
-		"update_repo", 
-		Status.set_updating, 
-		function() Status.set_updating(false) end,
-		{
-			title = "Updating Dotfiles",
-			initial_message = "Pulling latest changes...",
+	run_operation({
+		name = "update_repo",
+		status_field = "is_updating",
+		progress = {
+			title = "Updater",
+			message = "Pulling latest changes...",
 			success_check = function() 
 				return not Status.state.needs_update 
 			end
-		}
-	)(
-		config, 
-		render_callback, 
-		function()
+		},
+		operation = function()
 			update_git_repo(config, "update_repo")
 			refresh_data(config)
 		end
-	)
+	}, render_callback)
 end
 
 function M.update_dotfiles_and_plugins(config, render_callback)
-	with_operation(
-		"update_dotfiles_and_plugins", 
-		Status.set_updating, 
-		function() Status.set_updating(false) end,
-		{
-			title = "Updating All",
-			initial_message = "Updating dotfiles and plugins...",
+	run_operation({
+		name = "update_dotfiles_and_plugins",
+		status_field = "is_updating",
+		progress = {
+			title = "Updater",
+			message = "Updating dotfiles and plugins...",
 			success_check = function() 
 				return not Status.state.needs_update and not Status.state.has_plugin_updates
 			end
-		}
-	)(
-		config,
-		render_callback,
-		function()
+		},
+		operation = function()
 			update_git_repo(config, "update_dotfiles_and_plugins")
 			refresh_data(config)
 			
@@ -209,7 +208,7 @@ function M.update_dotfiles_and_plugins(config, render_callback)
 				Plugins.install_plugin_updates(config, render_callback)
 			end
 		end
-	)
+	}, render_callback)
 end
 
 function M.check_updates_silent(config)

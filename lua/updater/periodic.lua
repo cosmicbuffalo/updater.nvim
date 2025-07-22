@@ -47,7 +47,7 @@ function M.setup_periodic_check(config)
 	local frequency_ms = config.periodic_check.frequency_minutes * 60 * 1000
 
 	local timer = vim.uv.new_timer()
-	Status.set_periodic_timer(timer)
+	Status.state.periodic_timer = timer
 	timer:start(
 		frequency_ms,
 		frequency_ms,
