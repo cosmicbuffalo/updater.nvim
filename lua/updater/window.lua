@@ -139,7 +139,7 @@ function M.close()
 		vim.api.nvim_win_close(Status.state.window, true)
 	end
 	Status.state.is_open = false
-	Status.reset_initial_load()
+	Status.state.is_initial_load = false
 	Status.clear_recent_updates()
 	Status.state.window = nil
 end
