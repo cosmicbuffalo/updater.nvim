@@ -103,15 +103,6 @@ local function sanitize_repo_path(path)
 	return resolved
 end
 
-local function sanitize_refresh_delay(config)
-	if not config.refresh or type(config.refresh.delay_ms) ~= "number" or config.refresh.delay_ms < 0 then
-		config.refresh = config.refresh or {}
-		config.refresh.delay_ms = Constants.DEFAULT_REFRESH_DELAY
-	elseif config.refresh.delay_ms > Constants.MAX_REFRESH_DELAY then
-		config.refresh.delay_ms = Constants.MAX_REFRESH_DELAY
-	end
-	return config
-end
 
 function M.setup_config(opts)
 	local default_config = {
@@ -170,18 +161,6 @@ function M.setup_config(opts)
 			enabled = true,
 			frequency_minutes = 20,
 		},
-		refresh = {
-			delay_ms = Constants.DEFAULT_REFRESH_DELAY,
-		},
-		debug = {
-			enabled = false,
-			simulate_updates = {
-				dotfiles = 0,
-				plugins = 0,
-			},
-			slow_refresh = false,
-			refresh_delay_ms = 3000,
-		},
 	}
 
 	local merged_config = vim.tbl_deep_extend("force", default_config, opts or {})
@@ -203,7 +182,6 @@ function M.setup_config(opts)
 	end
 
 	merged_config.repo_path = sanitized_path
-	merged_config = sanitize_refresh_delay(merged_config)
 
 	return merged_config
 end

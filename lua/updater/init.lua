@@ -6,7 +6,6 @@ local Plugins = require("updater.plugins")
 local Periodic = require("updater.periodic")
 local Spinner = require("updater.spinner")
 local Git = require("updater.git")
-local Constants = require("updater.constants")
 local Utils = require("updater.utils")
 local M = {}
 
@@ -64,7 +63,7 @@ function M.open()
 
 	vim.defer_fn(function()
 		Operations.refresh(config, render_callback)
-	end, Constants.ASYNC_DELAY)
+	end, 10)
 end
 
 function M.close()
@@ -138,11 +137,11 @@ function M.setup(opts)
 		"n",
 		config.keymap.open,
 		M.open,
-		{ noremap = true, silent = true, desc = "Open Neovim Dotfiles Updater" }
+		{ noremap = true, silent = true, desc = "Open Updater" }
 	)
 
-	vim.api.nvim_create_user_command("UpdaterOpen", M.open, { desc = "Open the dotfiles updater" })
-	vim.api.nvim_create_user_command("UpdaterCheck", M.check_updates, { desc = "Check for dotfiles updates" })
+	vim.api.nvim_create_user_command("UpdaterOpen", M.open, { desc = "Open Updater" })
+	vim.api.nvim_create_user_command("UpdaterCheck", M.check_updates, { desc = "Check for updates" })
 	vim.api.nvim_create_user_command(
 		"UpdaterStartChecking",
 		M.start_periodic_check,
@@ -153,20 +152,13 @@ function M.setup(opts)
 		M.stop_periodic_check,
 		{ desc = "Stop periodic update checking" }
 	)
-	vim.api.nvim_create_user_command("UpdaterHealth", M.health_check, { desc = "Run updater health check" })
+	vim.api.nvim_create_user_command("UpdaterHealth", M.health_check, { desc = "Run Updater health check" })
 
-	-- Load debug module automatically if enabled in config
-	if config.debug.enabled then
-		local debug = load_debug_module()
-		debug.register_commands()
-	end
-
-	-- Command to toggle debug mode and load module if needed
 	vim.api.nvim_create_user_command("UpdaterDebugToggle", function()
 		local debug = load_debug_module()
 		debug.register_commands()
 		debug.toggle_debug_mode()
-	end, { desc = "Toggle debug mode and load debug module if needed" })
+	end, { desc = "Toggle Updater debug mode" })
 
 	Periodic.setup_startup_check(config, M.check_updates)
 	Periodic.setup_periodic_check(config)

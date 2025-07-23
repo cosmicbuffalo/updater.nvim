@@ -4,9 +4,6 @@ local M = {}
 M.SPINNER_INTERVAL = 100         -- Spinner animation interval (ms)
 M.PROGRESS_SUCCESS_DURATION = 1500  -- How long to show "Updates available!" (ms)
 M.PROGRESS_FINISH_DURATION = 1000   -- How long to show "Up to date" (ms)
-M.ASYNC_DELAY = 10               -- Default async operation delay (ms)
-M.MAX_REFRESH_DELAY = 3000       -- Maximum allowed refresh delay (ms)
-M.DEFAULT_REFRESH_DELAY = 1500   -- Default refresh delay (ms)
 M.STARTUP_CHECK_DELAY = 200      -- Delay for startup check (ms)
 M.TIMEOUT_EXIT_CODE = 124        -- Exit code for command timeout
 

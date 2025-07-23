@@ -106,18 +106,7 @@ local function parse_commits_from_output(result)
 end
 
 function M.get_current_commit(config, repo_path)
-	local result, err = M.execute_git_command("git rev-parse HEAD", "status", "Git status check", config, repo_path)
-	return result
-end
-
-local function get_remote_commit(config, repo_path)
-	local _, err = M.execute_git_command("git fetch", "fetch", "Git fetch operation", config, repo_path)
-	if err then
-		return nil
-	end
-
-	local result, _fetch_err =
-		M.execute_git_command("git rev-parse @{u}", "status", "Git status check", config, repo_path)
+	local result = M.execute_git_command("git rev-parse HEAD", "status", "Git status check", config, repo_path)
 	return result
 end
 
@@ -152,36 +141,6 @@ function M.get_ahead_behind_count(config, repo_path)
 
 	local ahead, behind = result:match("(%d+)%s+(%d+)")
 	return tonumber(ahead) or 0, tonumber(behind) or 0
-end
-
-local function get_latest_remote_commit(config, repo_path)
-	local fetch_result, err = M.execute_git_command("git fetch", "fetch", "Git fetch operation", config, repo_path)
-	if err then
-		return nil
-	end
-
-	local hash, hash_err =
-		M.execute_git_command("git rev-parse origin/" .. config.main_branch, "status", nil, config, repo_path)
-	if not hash then
-		return nil
-	end
-
-	local details, details_err = M.execute_git_command(
-		'git show -s --format="%h|%s|%an|%ar" ' .. hash,
-		"log",
-		"Git log operation",
-		config,
-		repo_path
-	)
-	if not details then
-		return nil
-	end
-
-	local commit = parse_commit_line(details)
-	if commit then
-		commit.full_hash = hash
-	end
-	return commit
 end
 
 local function is_commit_in_branch(commit_hash, branch, config, repo_path)

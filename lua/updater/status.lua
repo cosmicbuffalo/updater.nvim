@@ -41,6 +41,11 @@ local state = {
 
 	-- Periodic check state
 	periodic_timer = nil,
+
+	-- Debug state
+	debug_enabled = false,
+	debug_simulate_dotfiles = 0,
+	debug_simulate_plugins = 0,
 }
 
 -- Utility functions for timer management
@@ -137,56 +142,6 @@ end
 
 M.state = state
 
-function M.reset_all()
-	-- Reset to initial state but preserve certain values
-	local preserved_config = {
-		buffer = state.buffer,
-		window = state.window,
-		is_open = state.is_open,
-	}
-
-	state = {
-		-- Window/UI state
-		is_open = preserved_config.is_open,
-		buffer = preserved_config.buffer,
-		window = preserved_config.window,
-		is_initial_load = false,
-
-		-- Operation states
-		is_updating = false,
-		is_refreshing = false,
-		is_installing_plugins = false,
-
-		-- Git status
-		current_branch = "unknown",
-		current_commit = nil,
-		ahead_count = 0,
-		behind_count = 0,
-		needs_update = false,
-		last_check_time = nil,
-
-		-- Commit data
-		commits = {},
-		remote_commits = {},
-		commits_in_branch = {},
-		log_type = "local",
-
-		-- Plugin data
-		plugin_updates = {},
-		has_plugin_updates = false,
-
-		-- Restart reminder state
-		recently_updated_dotfiles = false,
-		recently_updated_plugins = false,
-
-		-- Spinner state
-		loading_spinner_timer = nil,
-		loading_spinner_frame = 1,
-
-		-- Periodic check state
-		periodic_timer = nil,
-	}
-end
 
 return M
 
