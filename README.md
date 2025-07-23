@@ -80,9 +80,7 @@ require("updater").setup({
     -- Periodic update checking
     periodic_check = {
         enabled = true,           -- Enable periodic checking
-        frequency_minutes = 120,  -- Check every 2 hours
-        use_fidget = true,        -- Use fidget.nvim for progress indication if available
-        show_progress = true,     -- Show progress during periodic checks
+        frequency_minutes = 20,   -- Check every 20 minutes (default)
     },
 })
 ```
@@ -123,19 +121,15 @@ require("updater").setup({
 ```
 
 #### Periodic Checking
-Automatically check every few hours (only notifies when updates are available):
+Automatically check for updates every few minutes (only notifies when updates are available):
 ```lua
 require("updater").setup({
     periodic_check = {
         enabled = true,
-        frequency_minutes = 120,  -- Check every 2 hours
-        use_fidget = true,        -- Use fidget.nvim for unobtrusive progress indication
-        show_progress = false,    -- Disable all progress indication for silent checks
+        frequency_minutes = 60,  -- Check every hour
     }
 })
 ```
-
-**Fidget Integration**: If you have [fidget.nvim](https://github.com/j-hui/fidget.nvim) installed, periodic checks will show a subtle progress indicator in the bottom-right corner instead of intrusive notifications. This provides a seamless, LSP-like experience for background operations.
 
 ## Integrations
 
@@ -242,7 +236,7 @@ updater.open()
 - Git
 - `timeout` command (Linux) or `gtimeout` (macOS via Homebrew) - optional but recommended
 - lazy.nvim - optional, enables plugin update features
-- fidget.nvim - optional, enables unobtrusive progress indicators for background checks
+- fidget.nvim - optional, enables unobtrusive progress indicators
 
 ## Testing
 
@@ -256,31 +250,21 @@ For local testing and development, see [TESTING.md](TESTING.md) for comprehensiv
 
 Debug functionality is loaded on-demand to keep the main plugin lightweight:
 
-```lua
--- Enable debug mode in configuration
-require("updater").setup({
-    debug = { enabled = true }  -- Debug module loads automatically
-})
-```
-
-Or toggle debug mode at runtime:
-
 ```vim
-:UpdaterDebugToggle        " Toggle debug mode (loads module if needed)
+:UpdaterDebugToggle        " Toggle debug mode (lazily loads)
 :UpdaterDebugSimulate 2 3  " Simulate 2 dotfile + 3 plugin updates  
 :UpdaterOpen               " Open TUI to see simulated updates
 :UpdaterDebugDisable       " Turn off debug mode
 ```
 
 **Debug Commands**:
-- `:UpdaterDebugToggle` - Toggle debug mode on/off (loads module if needed, sets defaults if not configured)
+- `:UpdaterDebugToggle` - Toggle debug mode on/off 
 - `:UpdaterDebugSimulate <dotfiles> <plugins>` - Enable debug mode and simulate specific update counts (both arguments required)
-- `:UpdaterDebugDisable` - Turn off debug mode (preserves simulation settings)
+- `:UpdaterDebugDisable` - Turn off debug mode
 
 **Behavior**:
-- If `debug.enabled = true` in config, debug module loads automatically at startup
-- If `debug.enabled = false` (default), debug module loads only when debug commands are run  
-- `:UpdaterDebugToggle` sets default simulation values (2 dotfiles, 3 plugins) if none are configured
+- Debug module loads only when `:UpdaterDebugToggle` is first used
+- `:UpdaterDebugToggle` sets default simulation values (2 dotfiles, 3 plugins)
 - Debug simulation affects both periodic checks and the updater TUI when enabled
 
 **Note**: Debug mode simulates updates without making actual git changes, useful for testing UI and workflows.

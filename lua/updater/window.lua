@@ -90,20 +90,12 @@ function M.render(config)
 		restart_reminder_line = #lines - 1
 	end
 
-	local remote_commit_line = #lines + 1
 	for _, line in ipairs(remote_commit_info) do
 		table.insert(lines, line)
 	end
-	if #remote_commit_info == 0 then
-		remote_commit_line = #lines - 1
-	end
 
-	local plugin_update_line = #lines + 1
 	for _, line in ipairs(plugin_update_info) do
 		table.insert(lines, line)
-	end
-	if #plugin_update_info == 0 then
-		plugin_update_line = #lines - 1
 	end
 
 	for _, line in ipairs(commit_log) do

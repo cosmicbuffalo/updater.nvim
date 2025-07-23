@@ -83,7 +83,7 @@ local function check_debug_module(config)
 	local debug_status = "not loaded"
 	local debug_check_status = "ℹ INFO"
 
-	if config.debug.enabled then
+	if Status.state.debug_enabled then
 		local ok, debug_module = pcall(require, "updater.debug")
 		if ok and debug_module.is_loaded() then
 			debug_status = debug_module.get_status()

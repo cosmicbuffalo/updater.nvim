@@ -16,8 +16,8 @@ end
 
 -- Check if debug mode should override operation
 local function should_use_debug_mode(config)
-	return config.debug.enabled
-		and (config.debug.simulate_updates.dotfiles > 0 or config.debug.simulate_updates.plugins > 0)
+	return Status.state.debug_enabled
+		and (Status.state.debug_simulate_dotfiles > 0 or Status.state.debug_simulate_plugins > 0)
 end
 
 -- Unified error handling function
@@ -107,7 +107,7 @@ end
 local function refresh_data(config)
 	local success, error_msg = pcall(function()
 		if should_use_debug_mode(config) then
-			get_debug_module().simulate_refresh_data(config)
+			get_debug_module().simulate_refresh_data()
 			return
 		end
 		
@@ -155,7 +155,7 @@ function M.refresh(config, render_callback)
 	run_operation({
 		name = "refresh",
 		status_field = "is_refreshing",
-		delay_ms = config.refresh.delay_ms,
+		delay_ms = 1200,
 		progress = {
 			title = "Updater",
 			message = "Checking for updates...",
@@ -213,8 +213,8 @@ end
 
 function M.check_updates_silent(config)
 	local success, result = pcall(function()
-		if config.debug.enabled then
-			return get_debug_module().simulate_check_updates_silent(config)
+		if Status.state.debug_enabled then
+			return get_debug_module().simulate_check_updates_silent()
 		end
 
 		refresh_data(config)

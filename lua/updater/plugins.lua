@@ -151,7 +151,7 @@ function M.install_plugin_updates(config, render_callback)
 	end
 
 	local result = handle:read("*a")
-	local success = handle:close()
+	handle:close()
 
 	Status.state.is_installing_plugins = false
 	Spinner.stop_loading_spinner()

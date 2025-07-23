@@ -16,20 +16,20 @@ function M.toggle_debug_mode()
 		return
 	end
 
-	if config.debug.enabled then
+	if Status.state.debug_enabled then
 		-- Disable debug mode
-		config.debug.enabled = false
+		Status.state.debug_enabled = false
 		vim.notify("Updater debug mode disabled", vim.log.levels.INFO, { title = "Updater Debug" })
 	else
 		-- Enable debug mode with defaults if not set
-		config.debug.enabled = true
-		if config.debug.simulate_updates.dotfiles == 0 and config.debug.simulate_updates.plugins == 0 then
-			config.debug.simulate_updates.dotfiles = 2
-			config.debug.simulate_updates.plugins = 3
+		Status.state.debug_enabled = true
+		if Status.state.debug_simulate_dotfiles == 0 and Status.state.debug_simulate_plugins == 0 then
+			Status.state.debug_simulate_dotfiles = 2
+			Status.state.debug_simulate_plugins = 3
 		end
 
-		local dotfiles = config.debug.simulate_updates.dotfiles
-		local plugins = config.debug.simulate_updates.plugins
+		local dotfiles = Status.state.debug_simulate_dotfiles
+		local plugins = Status.state.debug_simulate_plugins
 		vim.notify(
 			string.format("Updater debug mode: simulating %d dotfile update(s), %d plugin update(s)", dotfiles, plugins),
 			vim.log.levels.INFO,
@@ -55,12 +55,12 @@ function M.simulate_updates(dotfile_updates, plugin_updates)
 	end
 
 	-- Enable debug mode if not already enabled
-	if not config.debug.enabled then
-		config.debug.enabled = true
+	if not Status.state.debug_enabled then
+		Status.state.debug_enabled = true
 	end
 
-	config.debug.simulate_updates.dotfiles = dotfile_updates
-	config.debug.simulate_updates.plugins = plugin_updates
+	Status.state.debug_simulate_dotfiles = dotfile_updates
+	Status.state.debug_simulate_plugins = plugin_updates
 
 	vim.notify(
 		string.format(
@@ -89,7 +89,7 @@ function M.disable_debug_mode()
 		return
 	end
 
-	config.debug.enabled = false
+	Status.state.debug_enabled = false
 	vim.notify("Updater debug mode disabled", vim.log.levels.INFO, { title = "Updater Debug" })
 
 	-- Trigger immediate check for lualine updates
@@ -103,20 +103,20 @@ function M.disable_debug_mode()
 	end
 end
 
-local function simulate_check_updates_silent(config_ref)
+function M.simulate_check_updates_silent()
 	-- This function handles the debug simulation logic from operations.lua
-	if not config_ref.debug.enabled then
+	if not Status.state.debug_enabled then
 		return false
 	end
 
 	Status.state.current_branch = "debug-branch"
 	Status.state.ahead_count = 0
-	Status.state.behind_count = config_ref.debug.simulate_updates.dotfiles
+	Status.state.behind_count = Status.state.debug_simulate_dotfiles
 	Status.state.last_check_time = os.time()
-	Status.state.needs_update = config_ref.debug.simulate_updates.dotfiles > 0
+	Status.state.needs_update = Status.state.debug_simulate_dotfiles > 0
 
 	Status.state.plugin_updates = {}
-	for i = 1, config_ref.debug.simulate_updates.plugins do
+	for i = 1, Status.state.debug_simulate_plugins do
 		table.insert(Status.state.plugin_updates, {
 			name = "test-plugin-" .. i,
 			installed_commit = "abc123" .. i,
@@ -129,10 +129,10 @@ local function simulate_check_updates_silent(config_ref)
 	return Status.state.needs_update or Status.state.has_plugin_updates
 end
 
-local function simulate_refresh_data(config_ref)
+function M.simulate_refresh_data()
 	-- This function provides comprehensive debug simulation for the TUI
-	local dotfiles_count = config_ref.debug.simulate_updates.dotfiles
-	local plugins_count = config_ref.debug.simulate_updates.plugins
+	local dotfiles_count = Status.state.debug_simulate_dotfiles
+	local plugins_count = Status.state.debug_simulate_plugins
 
 	-- Simulate basic git status
 	Status.state.current_branch = "debug-branch"
@@ -232,9 +232,9 @@ function M.get_status()
 		return "not loaded"
 	end
 
-	if config.debug.enabled then
-		local sim_dotfiles = config.debug.simulate_updates.dotfiles
-		local sim_plugins = config.debug.simulate_updates.plugins
+	if Status.state.debug_enabled then
+		local sim_dotfiles = Status.state.debug_simulate_dotfiles
+		local sim_plugins = Status.state.debug_simulate_plugins
 
 		if sim_dotfiles > 0 or sim_plugins > 0 then
 			return string.format("enabled (simulating %dd %dp)", sim_dotfiles, sim_plugins)
@@ -244,15 +244,6 @@ function M.get_status()
 	else
 		return "loaded but disabled"
 	end
-end
-
--- Public API for operations.lua to call
-function M.simulate_check_updates_silent(config_ref)
-	return simulate_check_updates_silent(config_ref)
-end
-
-function M.simulate_refresh_data(config_ref)
-	return simulate_refresh_data(config_ref)
 end
 
 return M
