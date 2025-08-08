@@ -68,7 +68,11 @@ function M.render(config)
 	local remote_commit_info = UI.generate_remote_commits_section(Status.state, config)
 	local plugin_update_info = UI.generate_plugin_updates_section(Status.state)
 	local restart_reminder = UI.generate_restart_reminder_section(Status.state)
-	local commit_log = UI.generate_commit_log(Status.state, config)
+	
+	-- Only show commit log if it's not redundant with remote commits section
+	-- When both would show remote commits, prefer the remote commits section
+	local show_commit_log = not (#Status.state.remote_commits > 0 and Status.state.log_type == "remote") and #Status.state.commits > 0
+	local commit_log = show_commit_log and UI.generate_commit_log(Status.state, config) or {}
 
 	local lines = {}
 
