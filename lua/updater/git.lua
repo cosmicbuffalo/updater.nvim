@@ -257,7 +257,7 @@ local function execute_update_command(config, repo_path, current_branch)
   local cmd, timeout_key
 
   if current_branch == config.main_branch then
-    cmd = "git pull origin " .. config.main_branch
+    cmd = "git pull --rebase --autostash origin " .. config.main_branch
     timeout_key = "pull"
   else
     cmd = "git merge origin/" .. config.main_branch .. " --no-edit"
