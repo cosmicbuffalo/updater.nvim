@@ -67,6 +67,19 @@ local function validate_main_branch(cfg)
   return errors
 end
 
+local function validate_git_options(cfg)
+  local errors = {}
+  if cfg.git then
+    if cfg.git.rebase ~= nil and type(cfg.git.rebase) ~= "boolean" then
+      table.insert(errors, "git.rebase must be a boolean")
+    end
+    if cfg.git.autostash ~= nil and type(cfg.git.autostash) ~= "boolean" then
+      table.insert(errors, "git.autostash must be a boolean")
+    end
+  end
+  return errors
+end
+
 local function validate_config(cfg)
   local errors = {}
 
@@ -77,6 +90,7 @@ local function validate_config(cfg)
     validate_timeouts,
     validate_log_count,
     validate_main_branch,
+    validate_git_options,
   }
 
   for _, validator in ipairs(validators) do
@@ -110,6 +124,10 @@ function M.setup_config(opts)
     title = "Neovim Dotfiles Updater",
     log_count = 15,
     main_branch = "main",
+    git = {
+      rebase = true,
+      autostash = true,
+    },
     timeouts = {
       fetch = 30,
       pull = 30,

@@ -257,7 +257,18 @@ local function execute_update_command(config, repo_path, current_branch)
   local cmd, timeout_key
 
   if current_branch == config.main_branch then
-    cmd = "git pull --rebase --autostash origin " .. config.main_branch
+    local pull_flags = {}
+
+    if config.git and config.git.rebase then
+      table.insert(pull_flags, "--rebase")
+    end
+
+    if config.git and config.git.autostash then
+      table.insert(pull_flags, "--autostash")
+    end
+
+    local flags_str = #pull_flags > 0 and (" " .. table.concat(pull_flags, " ")) or ""
+    cmd = "git pull" .. flags_str .. " origin " .. config.main_branch
     timeout_key = "pull"
   else
     cmd = "git merge origin/" .. config.main_branch .. " --no-edit"

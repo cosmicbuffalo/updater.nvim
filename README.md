@@ -48,6 +48,12 @@ require("updater").setup({
     
     -- Main branch name
     main_branch = "main",
+
+    -- Git operation options
+    git = {
+        rebase = true,
+        autostash = true,
+    },
     
     -- Git operation timeouts (in seconds)
     timeouts = {
