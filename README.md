@@ -88,6 +88,9 @@ require("updater").setup({
         enabled = true,           -- Enable periodic checking
         frequency_minutes = 20,   -- Check every 20 minutes (default)
     },
+
+    -- Excluded filetypes - prevents update checks when in these buffer types
+    excluded_filetypes = { "gitcommit", "gitrebase" },
 })
 ```
 
@@ -134,6 +137,14 @@ require("updater").setup({
         enabled = true,
         frequency_minutes = 60,  -- Check every hour
     }
+})
+```
+
+#### Excluding Filetypes
+Prevent update checks from running when you're in certain buffer types (e.g., during git commits):
+```lua
+require("updater").setup({
+    excluded_filetypes = { "gitcommit", "gitrebase" }
 })
 ```
 
