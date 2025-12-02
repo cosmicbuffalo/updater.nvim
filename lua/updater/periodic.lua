@@ -52,6 +52,13 @@ function M.setup_periodic_check(config)
     frequency_ms,
     frequency_ms,
     vim.schedule_wrap(function()
+      -- Skip check if current filetype is excluded
+      local ft = vim.bo.filetype
+      for _, excluded_ft in ipairs(config.excluded_filetypes or {}) do
+        if ft == excluded_ft then
+          return
+        end
+      end
       periodic_check(config)
     end)
   )
@@ -66,6 +73,13 @@ function M.setup_startup_check(config, check_updates_callback)
     group = vim.api.nvim_create_augroup("updater_check_updates", { clear = true }),
     callback = function()
       vim.defer_fn(function()
+        -- Skip check if current filetype is excluded
+        local ft = vim.bo.filetype
+        for _, excluded_ft in ipairs(config.excluded_filetypes or {}) do
+          if ft == excluded_ft then
+            return
+          end
+        end
         check_updates_callback()
       end, Constants.STARTUP_CHECK_DELAY)
     end,

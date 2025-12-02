@@ -80,6 +80,22 @@ local function validate_git_options(cfg)
   return errors
 end
 
+local function validate_excluded_filetypes(cfg)
+  local errors = {}
+  if cfg.excluded_filetypes then
+    if type(cfg.excluded_filetypes) ~= "table" then
+      table.insert(errors, "excluded_filetypes must be a table")
+    else
+      for i, ft in ipairs(cfg.excluded_filetypes) do
+        if type(ft) ~= "string" then
+          table.insert(errors, "excluded_filetypes[" .. i .. "] must be a string")
+        end
+      end
+    end
+  end
+  return errors
+end
+
 local function validate_config(cfg)
   local errors = {}
 
@@ -91,6 +107,7 @@ local function validate_config(cfg)
     validate_log_count,
     validate_main_branch,
     validate_git_options,
+    validate_excluded_filetypes,
   }
 
   for _, validator in ipairs(validators) do
@@ -178,6 +195,7 @@ function M.setup_config(opts)
       enabled = true,
       frequency_minutes = 20,
     },
+    excluded_filetypes = { "gitcommit", "gitrebase" },
   }
 
   local merged_config = vim.tbl_deep_extend("force", default_config, opts or {})
