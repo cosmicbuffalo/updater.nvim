@@ -14,6 +14,7 @@ A Neovim plugin for managing and updating your dotfiles repository directly from
 - 🛡️ Robust configuration validation and error handling
 - 🏥 Built-in health checking for troubleshooting
 - 🔒 Security features to prevent shell injection
+- 💾 File-based caching to prevent redundant checks across multiple Neovim instances
 
 ## Installation
 
