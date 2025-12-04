@@ -90,14 +90,7 @@ function M.check_updates()
   state.needs_update = status.behind > 0
   state.last_check_time = os.time()
 
-  Cache.update_after_check(config.repo_path, {
-    current_commit = state.current_commit,
-    branch = state.current_branch,
-    behind_count = state.behind_count,
-    ahead_count = state.ahead_count,
-    needs_update = state.needs_update,
-    has_plugin_updates = state.has_plugin_updates or false,
-  })
+  Cache.update_after_check(config.repo_path, state)
 
   if state.needs_update then
     local message = Utils.generate_outdated_message(config, status)

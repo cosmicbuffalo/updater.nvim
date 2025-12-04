@@ -97,15 +97,15 @@ function M.is_fresh(repo_path, frequency_minutes)
   return age_seconds < max_age_seconds
 end
 
-function M.update_after_check(repo_path, status_data)
+function M.update_after_check(repo_path, state)
   local cache_data = {
     last_check_time = os.time(),
-    last_commit_hash = status_data.current_commit,
-    branch = status_data.branch,
-    behind_count = status_data.behind_count or 0,
-    ahead_count = status_data.ahead_count or 0,
-    needs_update = status_data.needs_update or false,
-    has_plugin_updates = status_data.has_plugin_updates or false,
+    last_commit_hash = state.current_commit,
+    branch = state.current_branch,
+    behind_count = state.behind_count or 0,
+    ahead_count = state.ahead_count or 0,
+    needs_update = state.needs_update or false,
+    has_plugin_updates = state.has_plugin_updates or false,
   }
 
   return M.write(repo_path, cache_data)

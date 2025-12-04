@@ -135,14 +135,7 @@ local function refresh_data(config)
     Status.state.has_plugin_updates = #Status.state.plugin_updates > 0
     Status.state.last_check_time = os.time()
 
-    Cache.update_after_check(config.repo_path, {
-      current_commit = Status.state.current_commit,
-      branch = Status.state.current_branch,
-      behind_count = Status.state.behind_count,
-      ahead_count = Status.state.ahead_count,
-      needs_update = Status.state.needs_update,
-      has_plugin_updates = Status.state.has_plugin_updates,
-    })
+    Cache.update_after_check(config.repo_path, Status.state)
   end)
 
   if not success then
