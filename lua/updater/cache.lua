@@ -1,7 +1,7 @@
 local M = {}
 
 local CACHE_VERSION = 1
-local CACHE_DIR_NAME = "updater"
+local CACHE_DIR_NAME = "updater.nvim"
 local CACHE_KEY_LENGTH = 16
 
 function M.get_cache_dir()
