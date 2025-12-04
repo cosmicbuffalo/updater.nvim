@@ -135,7 +135,6 @@ local function refresh_data(config)
     Status.state.has_plugin_updates = #Status.state.plugin_updates > 0
     Status.state.last_check_time = os.time()
 
-    -- Persist to cache for cross-instance sharing
     Cache.update_after_check(config.repo_path, {
       current_commit = Status.state.current_commit,
       branch = Status.state.current_branch,

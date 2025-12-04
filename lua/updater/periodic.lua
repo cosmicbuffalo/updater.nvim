@@ -7,9 +7,8 @@ local Cache = require("updater.cache")
 local M = {}
 
 local function periodic_check(config)
-  -- Check cache before expensive git operation
   if Cache.is_fresh(config.repo_path, config.periodic_check.frequency_minutes) then
-    return -- Skip check, cache is still valid from another instance
+    return
   end
 
   local progress_handler = Progress.handle_refresh_progress("Checking for updates...", "Fetching remote changes...")
@@ -87,14 +86,12 @@ function M.setup_startup_check(config, check_updates_callback)
           end
         end
 
-        -- Check cache before expensive git operation
         if Cache.is_fresh(config.repo_path, config.periodic_check.frequency_minutes) then
-          -- Use cached status to notify user if updates were found previously
           local cached = Cache.read(config.repo_path)
           if cached and cached.needs_update then
             vim.notify(config.notify.outdated.message, vim.log.levels.WARN, { title = config.notify.outdated.title })
           end
-          return -- Skip git fetch, cache is still valid
+          return
         end
 
         check_updates_callback()

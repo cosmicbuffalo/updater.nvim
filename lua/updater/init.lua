@@ -90,7 +90,6 @@ function M.check_updates()
   state.needs_update = status.behind > 0
   state.last_check_time = os.time()
 
-  -- Persist to cache for cross-instance sharing
   Cache.update_after_check(config.repo_path, {
     current_commit = state.current_commit,
     branch = state.current_branch,
