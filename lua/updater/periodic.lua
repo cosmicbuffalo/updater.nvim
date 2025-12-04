@@ -3,9 +3,14 @@ local Operations = require("updater.operations")
 local Status = require("updater.status")
 local Spinner = require("updater.spinner")
 local Constants = require("updater.constants")
+local Cache = require("updater.cache")
 local M = {}
 
 local function periodic_check(config)
+  if Cache.is_fresh(config.repo_path, config.periodic_check.frequency_minutes) then
+    return
+  end
+
   local progress_handler = Progress.handle_refresh_progress("Checking for updates...", "Fetching remote changes...")
 
   local has_updates = Operations.check_updates_silent(config)
@@ -80,6 +85,15 @@ function M.setup_startup_check(config, check_updates_callback)
             return
           end
         end
+
+        if Cache.is_fresh(config.repo_path, config.periodic_check.frequency_minutes) then
+          local cached = Cache.read(config.repo_path)
+          if cached and cached.needs_update then
+            vim.notify(config.notify.outdated.message, vim.log.levels.WARN, { title = config.notify.outdated.title })
+          end
+          return
+        end
+
         check_updates_callback()
       end, Constants.STARTUP_CHECK_DELAY)
     end,

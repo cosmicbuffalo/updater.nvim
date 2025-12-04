@@ -7,6 +7,7 @@ local Periodic = require("updater.periodic")
 local Spinner = require("updater.spinner")
 local Git = require("updater.git")
 local Utils = require("updater.utils")
+local Cache = require("updater.cache")
 local M = {}
 
 -- Expose status module for external integrations
@@ -86,16 +87,17 @@ function M.check_updates()
   state.current_branch = status.branch
   state.ahead_count = status.ahead
   state.behind_count = status.behind
+  state.needs_update = status.behind > 0
   state.last_check_time = os.time()
 
-  if status.behind > 0 then
+  Cache.update_after_check(config.repo_path, state)
+
+  if state.needs_update then
     local message = Utils.generate_outdated_message(config, status)
     vim.notify(message, vim.log.levels.WARN, { title = config.notify.outdated.title })
-    state.needs_update = true
   else
     local message = Utils.generate_up_to_date_message(config, status)
     vim.notify(message, vim.log.levels.INFO, { title = config.notify.up_to_date.title })
-    state.needs_update = false
   end
 end
 

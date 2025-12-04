@@ -3,6 +3,7 @@ local Status = require("updater.status")
 local Plugins = require("updater.plugins")
 local Progress = require("updater.progress")
 local Spinner = require("updater.spinner")
+local Cache = require("updater.cache")
 local M = {}
 
 -- Centralized debug loading
@@ -133,6 +134,8 @@ local function refresh_data(config)
     Status.state.plugin_updates = Plugins.get_plugin_updates(config)
     Status.state.has_plugin_updates = #Status.state.plugin_updates > 0
     Status.state.last_check_time = os.time()
+
+    Cache.update_after_check(config.repo_path, Status.state)
   end)
 
   if not success then
