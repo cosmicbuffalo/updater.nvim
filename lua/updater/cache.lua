@@ -62,7 +62,6 @@ function M.write(repo_path, data)
   M.ensure_cache_dir()
 
   local cache_path = M.get_cache_path(repo_path)
-  local temp_path = cache_path .. ".tmp." .. os.time()
 
   local cache_data = vim.tbl_extend("force", data, {
     version = CACHE_VERSION,
@@ -74,19 +73,13 @@ function M.write(repo_path, data)
     return false
   end
 
-  local file = io.open(temp_path, "w")
+  local file = io.open(cache_path, "w")
   if not file then
     return false
   end
 
   file:write(json_content)
   file:close()
-
-  local rename_ok = os.rename(temp_path, cache_path)
-  if not rename_ok then
-    os.remove(temp_path)
-    return false
-  end
 
   return true
 end
