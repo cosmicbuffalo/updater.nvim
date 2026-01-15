@@ -135,39 +135,35 @@ function M.install_plugin_updates(config, render_callback)
     render_callback("normal")
   end
 
+  -- Use vim.system for async execution
   local cmd = "cd "
     .. vim.fn.shellescape(config.repo_path)
     .. " && nvim --headless +'lua require(\"lazy\").restore({wait=true})' +qa"
-  local handle = io.popen(cmd)
-  if not handle then
-    Status.state.is_installing_plugins = false
-    Spinner.stop_loading_spinner()
-    vim.notify("Failed to execute plugin restore command", vim.log.levels.ERROR, { title = "Plugin Updates" })
-    return
-  end
 
-  local result = handle:read("*a")
-  handle:close()
+  vim.system({ "bash", "-c", cmd }, { text = true }, function(obj)
+    vim.schedule(function()
+      Status.state.is_installing_plugins = false
+      Spinner.stop_loading_spinner()
 
-  Status.state.is_installing_plugins = false
-  Spinner.stop_loading_spinner()
+      local result = obj.stdout or ""
+      if obj.code ~= 0 or result:match("error") or result:match("Error") then
+        vim.notify(
+          "Failed to install plugin updates: " .. (result ~= "" and result or "Unknown error"),
+          vim.log.levels.ERROR,
+          { title = "Plugin Updates" }
+        )
+      else
+        vim.notify("Successfully restored plugins from lockfile!", vim.log.levels.INFO, { title = "Plugin Updates" })
+        Status.state.plugin_updates = M.get_plugin_updates(config)
+        Status.state.has_plugin_updates = #Status.state.plugin_updates > 0
+        Status.state.recently_updated_plugins = true
+      end
 
-  if not result or result:match("error") or result:match("Error") then
-    vim.notify(
-      "Failed to install plugin updates: " .. (result or "Unknown error"),
-      vim.log.levels.ERROR,
-      { title = "Plugin Updates" }
-    )
-  else
-    vim.notify("Successfully restored plugins from lockfile!", vim.log.levels.INFO, { title = "Plugin Updates" })
-    Status.state.plugin_updates = M.get_plugin_updates(config)
-    Status.state.has_plugin_updates = #Status.state.plugin_updates > 0
-    Status.state.recently_updated_plugins = true
-  end
-
-  if render_callback then
-    render_callback("normal")
-  end
+      if render_callback then
+        render_callback("normal")
+      end
+    end)
+  end)
 end
 
 return M

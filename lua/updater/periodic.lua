@@ -7,31 +7,33 @@ local Cache = require("updater.cache")
 local M = {}
 
 local function periodic_check(config)
-  if Cache.is_fresh(config.repo_path, config.periodic_check.frequency_minutes) then
-    return
-  end
-
-  local progress_handler = Progress.handle_refresh_progress("Checking for updates...", "Fetching remote changes...")
-
-  local has_updates = Operations.check_updates_silent(config)
-
-  if progress_handler then
-    progress_handler.finish(has_updates)
-  end
-
-  if has_updates then
-    local message = config.notify.outdated.message
-    if Status.state.ahead_count > 0 then
-      message = "Your branch is ahead by "
-        .. Status.state.ahead_count
-        .. " commit(s) and behind by "
-        .. Status.state.behind_count
-        .. " commit(s). Press "
-        .. config.keymap.open
-        .. " to open the updater."
+  Cache.is_fresh(config.repo_path, config.periodic_check.frequency_minutes, function(is_fresh, _)
+    if is_fresh then
+      return
     end
-    vim.notify(message, vim.log.levels.WARN, { title = config.notify.outdated.title })
-  end
+
+    local progress_handler = Progress.handle_refresh_progress("Checking for updates...", "Fetching remote changes...")
+
+    Operations.check_updates_silent(config, function(has_updates)
+      if progress_handler then
+        progress_handler.finish(has_updates)
+      end
+
+      if has_updates then
+        local message = config.notify.outdated.message
+        if Status.state.ahead_count > 0 then
+          message = "Your branch is ahead by "
+            .. Status.state.ahead_count
+            .. " commit(s) and behind by "
+            .. Status.state.behind_count
+            .. " commit(s). Press "
+            .. config.keymap.open
+            .. " to open the updater."
+        end
+        vim.notify(message, vim.log.levels.WARN, { title = config.notify.outdated.title })
+      end
+    end)
+  end)
 end
 
 function M.stop_periodic_check()
@@ -86,15 +88,20 @@ function M.setup_startup_check(config, check_updates_callback)
           end
         end
 
-        if Cache.is_fresh(config.repo_path, config.periodic_check.frequency_minutes) then
-          local cached = Cache.read(config.repo_path)
-          if cached and cached.needs_update then
-            vim.notify(config.notify.outdated.message, vim.log.levels.WARN, { title = config.notify.outdated.title })
+        Cache.is_fresh(config.repo_path, config.periodic_check.frequency_minutes, function(is_fresh, cached)
+          if is_fresh then
+            if cached and cached.needs_update then
+              vim.notify(
+                config.notify.outdated.message,
+                vim.log.levels.WARN,
+                { title = config.notify.outdated.title }
+              )
+            end
+            return
           end
-          return
-        end
 
-        check_updates_callback()
+          check_updates_callback()
+        end)
       end, Constants.STARTUP_CHECK_DELAY)
     end,
   })
