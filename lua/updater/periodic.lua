@@ -91,11 +91,7 @@ function M.setup_startup_check(config, check_updates_callback)
         Cache.is_fresh(config.repo_path, config.periodic_check.frequency_minutes, function(is_fresh, cached)
           if is_fresh then
             if cached and cached.needs_update then
-              vim.notify(
-                config.notify.outdated.message,
-                vim.log.levels.WARN,
-                { title = config.notify.outdated.title }
-              )
+              vim.notify(config.notify.outdated.message, vim.log.levels.WARN, { title = config.notify.outdated.title })
             end
             return
           end

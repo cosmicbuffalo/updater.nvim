@@ -242,12 +242,6 @@ local function add_highlight(buffer, ns_id, hl_group, line, col_start, col_end)
   vim.api.nvim_buf_add_highlight(buffer, ns_id, hl_group, line, col_start, col_end)
 end
 
-local function highlight_range(buffer, ns_id, hl_group, start_line, count, col_start, col_end)
-  for i = 0, count - 1 do
-    add_highlight(buffer, ns_id, hl_group, start_line + i, col_start, col_end)
-  end
-end
-
 local function highlight_header(buffer, ns_id)
   add_highlight(buffer, ns_id, "Directory", 1, 2, -1)
 end

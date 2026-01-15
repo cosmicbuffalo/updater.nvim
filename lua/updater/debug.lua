@@ -43,7 +43,6 @@ function M.toggle_debug_mode()
 
   -- Refresh if window is open
   if Status.state.is_open then
-    local Operations = require("updater.operations")
     Operations.refresh(config, Utils.create_render_callback(config))
   end
 end
@@ -78,7 +77,6 @@ function M.simulate_updates(dotfile_updates, plugin_updates)
 
   -- Refresh if window is open
   if Status.state.is_open then
-    local Operations = require("updater.operations")
     Operations.refresh(config, Utils.create_render_callback(config))
   end
 end
@@ -98,7 +96,6 @@ function M.disable_debug_mode()
 
   -- Refresh if window is open
   if Status.state.is_open then
-    local Operations = require("updater.operations")
     Operations.refresh(config, Utils.create_render_callback(config))
   end
 end

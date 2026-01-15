@@ -1,4 +1,3 @@
-local Constants = require("updater.constants")
 local M = {}
 
 local function validate_repo_path(cfg)
