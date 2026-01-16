@@ -66,14 +66,14 @@ function M.has_updates()
   return state.needs_update or state.has_plugin_updates
 end
 
+function M.has_recent_updates()
+  return state.recently_updated_dotfiles or state.recently_updated_plugins
+end
+
 -- High-level API functions for external use
 function M.clear_recent_updates()
   state.recently_updated_dotfiles = false
   state.recently_updated_plugins = false
-end
-
-function M.has_recent_updates()
-  return state.recently_updated_dotfiles or state.recently_updated_plugins
 end
 
 -- Status API for external consumers

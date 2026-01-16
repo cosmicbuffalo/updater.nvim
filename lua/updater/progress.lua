@@ -33,11 +33,6 @@ function M.handle_refresh_progress(progress_title, initial_message)
 
   return {
     progress = progress,
-    update_fetching = function()
-      if progress then
-        progress:report({ message = "Fetching remote changes..." })
-      end
-    end,
     finish = function(has_updates)
       if progress then
         if has_updates then

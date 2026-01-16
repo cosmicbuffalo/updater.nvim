@@ -216,27 +216,4 @@ function M.register_commands()
   commands_registered = true
 end
 
-function M.is_loaded()
-  return config ~= nil
-end
-
-function M.get_status()
-  if not config then
-    return "not loaded"
-  end
-
-  if Status.state.debug_enabled then
-    local sim_dotfiles = Status.state.debug_simulate_dotfiles
-    local sim_plugins = Status.state.debug_simulate_plugins
-
-    if sim_dotfiles > 0 or sim_plugins > 0 then
-      return string.format("enabled (simulating %dd %dp)", sim_dotfiles, sim_plugins)
-    else
-      return "enabled"
-    end
-  else
-    return "loaded but disabled"
-  end
-end
-
 return M
