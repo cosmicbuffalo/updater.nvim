@@ -235,6 +235,32 @@ function M.get_repo_status(config, repo_path, callback)
   end)
 end
 
+-- Async check for uncommitted changes in working directory
+function M.has_uncommitted_changes(config, repo_path, callback)
+  M.execute_git_command("git status --porcelain", "status", "Git status", config, repo_path, function(result, err)
+    if err then
+      callback(nil, err)
+    else
+      -- If output is non-empty, there are uncommitted changes
+      local has_changes = result and #vim.trim(result) > 0
+      callback(has_changes, nil)
+    end
+  end)
+end
+
+-- Async rollback to a specific commit (aborts any in-progress merge/rebase first)
+function M.rollback_to_commit(config, repo_path, commit_hash, callback)
+  local rollback_cmd = "git merge --abort 2>/dev/null || true; git rebase --abort 2>/dev/null || true; git reset --hard "
+    .. commit_hash
+  M.execute_git_command(rollback_cmd, "default", "Rollback", config, repo_path, function(_, err)
+    if err then
+      callback(false, "Failed to rollback: " .. err)
+    else
+      callback(true, nil)
+    end
+  end)
+end
+
 -- Async check commits in branch (processes commits one by one)
 function M.are_commits_in_branch(commits, branch, config, repo_path, callback)
   local result = {}
@@ -279,7 +305,8 @@ local function fetch_updates_async(config, repo_path, callback)
 end
 
 -- Async execute update command (pull or merge)
-local function execute_update_command_async(config, repo_path, current_branch, callback)
+-- For non-main branches, uses git stash to handle uncommitted changes
+local function execute_update_command_async(config, repo_path, current_branch, has_uncommitted, callback)
   local cd_cmd = "cd " .. vim.fn.shellescape(repo_path) .. " && "
   local cmd, timeout_key
 
@@ -298,7 +325,16 @@ local function execute_update_command_async(config, repo_path, current_branch, c
     cmd = "git pull" .. flags_str .. " origin " .. config.main_branch
     timeout_key = "pull"
   else
-    cmd = "git merge origin/" .. config.main_branch .. " --no-edit"
+    -- For non-main branches, stash changes before merge, then pop after
+    if has_uncommitted then
+      cmd = "git stash push -m 'updater-auto-stash' && "
+        .. "git merge origin/"
+        .. config.main_branch
+        .. " --no-edit && "
+        .. "git stash pop"
+    else
+      cmd = "git merge origin/" .. config.main_branch .. " --no-edit"
+    end
     timeout_key = "merge"
   end
 
@@ -307,52 +343,131 @@ local function execute_update_command_async(config, repo_path, current_branch, c
   end)
 end
 
+-- Check if result indicates a merge/rebase conflict or failure that needs rollback
+local function needs_rollback(result, err)
+  if err then
+    return true
+  end
+  if not result then
+    return true
+  end
+  -- Check for common conflict/failure patterns
+  local failure_patterns = {
+    "CONFLICT",
+    "Automatic merge failed",
+    "merge failed",
+    "could not apply",
+    "error:",
+    "fatal:",
+    "Cannot merge",
+    "Merge conflict",
+    "rebase failed",
+  }
+  for _, pattern in ipairs(failure_patterns) do
+    if result:match(pattern) then
+      return true
+    end
+  end
+  return false
+end
+
 -- Handle update result and notify user
+-- Returns: success, message, needs_rollback
 local function handle_update_result(config, current_branch, result, err, timeout_key)
   if err then
     local error_msg
+    local rollback_needed = true
     if err:match("timed out") then
       error_msg = "Git " .. timeout_key .. " operation timed out"
       vim.notify(error_msg, vim.log.levels.ERROR, { title = config.notify.timeout.title })
     else
-      error_msg = "Failed to update: " .. (result or err or "Unknown error")
+      error_msg = "Failed to update: " .. (err or "Unknown error")
       vim.notify(error_msg, vim.log.levels.ERROR, { title = config.notify.error.title })
     end
-    return false, error_msg
-  elseif not result or result:match("error") or result:match("Error") or result:match("conflict") then
-    local error_msg = "Failed to update: " .. (result or "Unknown error")
-    vim.notify(error_msg, vim.log.levels.ERROR, { title = config.notify.error.title })
-    return false, error_msg
-  else
-    local success_msg
-    if result:match("Already up to date") then
-      success_msg = "Already up to date with origin/" .. config.main_branch
-    else
-      if current_branch == config.main_branch then
-        success_msg = "Successfully pulled changes from origin/" .. config.main_branch
-      else
-        success_msg = "Successfully merged origin/" .. config.main_branch .. " into " .. current_branch
-      end
-    end
-    vim.notify(success_msg, vim.log.levels.INFO, { title = config.notify.updated.title })
-    return true, success_msg
+    return false, error_msg, rollback_needed
   end
+
+  -- Check for conflict or failure patterns in result
+  if needs_rollback(result, nil) then
+    local error_msg = "Merge conflict or error detected. Rolling back to previous state."
+    if result and result:match("CONFLICT") then
+      error_msg = "Merge conflict detected. Your branch has been restored to its previous state."
+    end
+    vim.notify(error_msg, vim.log.levels.ERROR, { title = config.notify.error.title })
+    return false, error_msg, true
+  end
+
+  -- Success case
+  local success_msg
+  if result:match("Already up to date") then
+    success_msg = "Already up to date with origin/" .. config.main_branch
+  else
+    if current_branch == config.main_branch then
+      success_msg = "Successfully pulled changes from origin/" .. config.main_branch
+    else
+      success_msg = "Successfully merged origin/" .. config.main_branch .. " into " .. current_branch
+    end
+  end
+  vim.notify(success_msg, vim.log.levels.INFO, { title = config.notify.updated.title })
+  return true, success_msg, false
 end
 
--- Async update repo (fetch + pull/merge)
+-- Async update repo (fetch + pull/merge with rollback on failure)
 function M.update_repo(config, repo_path, current_branch, callback)
-  -- Step 1: Fetch updates
-  fetch_updates_async(config, repo_path, function(fetch_success, fetch_error)
-    if not fetch_success then
-      callback(false, fetch_error)
+  -- Step 1: Save current HEAD for potential rollback
+  M.get_current_commit(config, repo_path, function(saved_head, head_err)
+    if head_err or not saved_head then
+      callback(false, "Failed to save current state: " .. (head_err or "Unknown error"))
       return
     end
 
-    -- Step 2: Execute update command
-    execute_update_command_async(config, repo_path, current_branch, function(result, err, timeout_key)
-      -- Step 3: Handle result
-      local success, message = handle_update_result(config, current_branch, result, err, timeout_key)
-      callback(success, message)
+    -- Step 2: Check for uncommitted changes
+    M.has_uncommitted_changes(config, repo_path, function(has_uncommitted, status_err)
+      if status_err then
+        callback(false, "Failed to check working directory status: " .. status_err)
+        return
+      end
+
+      -- Step 3: Fetch updates
+      fetch_updates_async(config, repo_path, function(fetch_success, fetch_error)
+        if not fetch_success then
+          callback(false, fetch_error)
+          return
+        end
+
+        -- Step 4: Execute update command
+        execute_update_command_async(
+          config,
+          repo_path,
+          current_branch,
+          has_uncommitted,
+          function(result, err, timeout_key)
+            -- Step 5: Handle result
+            local success, message, rollback_needed =
+              handle_update_result(config, current_branch, result, err, timeout_key)
+
+            -- Step 6: Rollback if needed
+            if rollback_needed then
+              M.rollback_to_commit(config, repo_path, saved_head, function(rollback_success, rollback_err)
+                if not rollback_success then
+                  local full_error = message .. " Rollback also failed: " .. (rollback_err or "Unknown error")
+                  vim.notify(full_error, vim.log.levels.ERROR, { title = config.notify.error.title })
+                  callback(false, full_error)
+                else
+                  vim.notify(
+                    "Operation failed but your branch has been restored to its previous state.",
+                    vim.log.levels.WARN,
+                    { title = config.notify.error.title }
+                  )
+                  callback(false, message)
+                end
+              end)
+            else
+              callback(success, message)
+            end
+          end
+        )
+      end)
     end)
   end)
 end

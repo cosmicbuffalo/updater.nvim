@@ -139,18 +139,63 @@ describe("ui module", function()
       end
       assert.is_true(found)
     end)
+
+    it("should show 'Seeing what's new on main' on non-main branch when refreshing", function()
+      test_state.current_branch = "feature-branch"
+      test_state.is_refreshing = true
+      test_state.is_initial_load = true
+      local header = UI.generate_header(test_state, test_config)
+
+      local found = false
+      for _, line in ipairs(header) do
+        if line:match("Seeing what's new on main") then
+          found = true
+          break
+        end
+      end
+      assert.is_true(found)
+    end)
+
+    it("should show different up-to-date message on non-main branch", function()
+      test_state.current_branch = "feature-branch"
+      test_state.behind_count = 0
+      test_state.has_plugin_updates = false
+      local header = UI.generate_header(test_state, test_config)
+
+      local found = false
+      for _, line in ipairs(header) do
+        if line:match("up to date with the latest commits on main") then
+          found = true
+          break
+        end
+      end
+      assert.is_true(found)
+    end)
   end)
 
   describe("generate_keybindings", function()
-    it("should return keybinding lines", function()
-      local keybindings = UI.generate_keybindings(test_config)
+    it("should return keybinding lines and keybind_data", function()
+      -- On main branch with updates available
+      test_state.current_branch = "main"
+      test_state.behind_count = 1
+      test_state.has_plugin_updates = true
+      test_state.plugin_updates = { { name = "test" } }
+
+      local keybindings, keybind_data = UI.generate_keybindings(test_state, test_config)
 
       assert.is_table(keybindings)
       assert.is_true(#keybindings > 0)
+      assert.is_table(keybind_data)
+      assert.is_true(#keybind_data > 0)
     end)
 
-    it("should include all keymaps", function()
-      local keybindings = UI.generate_keybindings(test_config)
+    it("should include all keymaps on main branch with updates", function()
+      test_state.current_branch = "main"
+      test_state.behind_count = 1
+      test_state.has_plugin_updates = true
+      test_state.plugin_updates = { { name = "test" } }
+
+      local keybindings, _ = UI.generate_keybindings(test_state, test_config)
       local text = table.concat(keybindings, "\n")
 
       assert.is_truthy(text:match("U"))
@@ -158,6 +203,62 @@ describe("ui module", function()
       assert.is_truthy(text:match("i"))
       assert.is_truthy(text:match("r"))
       assert.is_truthy(text:match("q"))
+    end)
+
+    it("should hide U keybind on non-main branch", function()
+      test_state.current_branch = "feature-branch"
+      test_state.behind_count = 1
+      test_state.has_plugin_updates = true
+      test_state.plugin_updates = { { name = "test" } }
+
+      local keybindings, _ = UI.generate_keybindings(test_state, test_config)
+      local text = table.concat(keybindings, "\n")
+
+      assert.is_falsy(text:match("Update dotfiles %+ install plugin updates"))
+      assert.is_truthy(text:match("Pull latest main into branch"))
+    end)
+
+    it("should hide u keybind when behind_count is 0", function()
+      test_state.current_branch = "main"
+      test_state.behind_count = 0
+      test_state.has_plugin_updates = false
+      test_state.plugin_updates = {}
+
+      local keybindings, keybind_data = UI.generate_keybindings(test_state, test_config)
+      local text = table.concat(keybindings, "\n")
+
+      -- Only r and q should be present (no U, u, or i)
+      -- Use a more specific pattern - "u - Update" to match the u keybind line specifically
+      assert.is_falsy(text:match("u %- Update dotfiles$"))
+      assert.is_truthy(text:match("Refresh"))
+      assert.is_truthy(text:match("Close"))
+      assert.equals(2, #keybind_data) -- Only r and q
+    end)
+
+    it("should hide i keybind when no plugin updates", function()
+      test_state.current_branch = "main"
+      test_state.behind_count = 1
+      test_state.has_plugin_updates = false
+      test_state.plugin_updates = {}
+
+      local keybindings, _ = UI.generate_keybindings(test_state, test_config)
+      local text = table.concat(keybindings, "\n")
+
+      assert.is_falsy(text:match("Install plugin updates"))
+    end)
+
+    it("should always show r and q keybinds", function()
+      test_state.current_branch = "feature-branch"
+      test_state.behind_count = 0
+      test_state.has_plugin_updates = false
+      test_state.plugin_updates = {}
+
+      local keybindings, keybind_data = UI.generate_keybindings(test_state, test_config)
+      local text = table.concat(keybindings, "\n")
+
+      assert.is_truthy(text:match("r"))
+      assert.is_truthy(text:match("q"))
+      assert.equals(2, #keybind_data)
     end)
   end)
 
@@ -305,6 +406,23 @@ describe("ui module", function()
 
       local text = table.concat(lines, "\n")
       assert.is_truthy(text:match("Keybindings"))
+    end)
+
+    it("should show 'Seeing what's new on main' on non-main branch", function()
+      test_state.current_branch = "feature-branch"
+      local lines = UI.generate_loading_state(test_state, test_config)
+
+      local text = table.concat(lines, "\n")
+      assert.is_truthy(text:match("Seeing what's new on main"))
+    end)
+
+    it("should not show U keybind on non-main branch during loading", function()
+      test_state.current_branch = "feature-branch"
+      local lines = UI.generate_loading_state(test_state, test_config)
+
+      local text = table.concat(lines, "\n")
+      assert.is_falsy(text:match("Update dotfiles %+ install plugin updates"))
+      assert.is_truthy(text:match("Pull latest main into branch"))
     end)
   end)
 end)

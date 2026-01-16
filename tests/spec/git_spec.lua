@@ -208,4 +208,112 @@ describe("git module", function()
       assert.is_nil(Git.get_validation_status(test_dir))
     end)
   end)
+
+  describe("has_uncommitted_changes", function()
+    it("should return false for clean working directory", function()
+      local done = false
+      local has_changes = nil
+
+      Git.has_uncommitted_changes(test_config, test_dir, function(result, err)
+        has_changes = result
+        done = true
+      end)
+
+      _G.test_helpers.wait_for(function()
+        return done
+      end)
+
+      assert.is_false(has_changes)
+    end)
+
+    it("should return true when there are uncommitted changes", function()
+      -- Create an untracked file
+      local test_file = test_dir .. "/untracked.txt"
+      local file = io.open(test_file, "w")
+      file:write("test content")
+      file:close()
+
+      local done = false
+      local has_changes = nil
+
+      Git.has_uncommitted_changes(test_config, test_dir, function(result, err)
+        has_changes = result
+        done = true
+      end)
+
+      _G.test_helpers.wait_for(function()
+        return done
+      end)
+
+      assert.is_true(has_changes)
+    end)
+  end)
+
+  describe("rollback_to_commit", function()
+    it("should rollback to a specific commit", function()
+      -- Get current commit
+      local done = false
+      local original_commit = nil
+
+      Git.get_current_commit(test_config, test_dir, function(result, err)
+        original_commit = result
+        done = true
+      end)
+
+      _G.test_helpers.wait_for(function()
+        return done
+      end)
+
+      -- Create a new commit
+      local test_file = test_dir .. "/new_file.txt"
+      local file = io.open(test_file, "w")
+      file:write("new content")
+      file:close()
+
+      vim.fn.system("cd " .. test_dir .. " && git add . && git commit -m 'new commit'")
+
+      -- Verify we're on a different commit
+      done = false
+      local new_commit = nil
+      Git.get_current_commit(test_config, test_dir, function(result, err)
+        new_commit = result
+        done = true
+      end)
+
+      _G.test_helpers.wait_for(function()
+        return done
+      end)
+
+      assert.are_not.equals(original_commit, new_commit)
+
+      -- Rollback
+      done = false
+      local rollback_success = nil
+
+      Git.rollback_to_commit(test_config, test_dir, original_commit, function(success, err)
+        rollback_success = success
+        done = true
+      end)
+
+      _G.test_helpers.wait_for(function()
+        return done
+      end)
+
+      assert.is_true(rollback_success)
+
+      -- Verify we're back to original commit
+      done = false
+      local current_commit = nil
+      Git.get_current_commit(test_config, test_dir, function(result, err)
+        current_commit = result
+        done = true
+      end)
+
+      _G.test_helpers.wait_for(function()
+        return done
+      end)
+
+      assert.equals(original_commit, current_commit)
+    end)
+  end)
 end)

@@ -61,17 +61,20 @@ local function generate_branch_status(state, config)
   return lines
 end
 
-local function generate_status_message(state)
+local function generate_status_message(state, config)
+  local is_on_main = state.current_branch == config.main_branch
+
   if state.is_updating then
     return "  " .. M.get_loading_spinner(state) .. " Updating dotfiles... Please wait."
   elseif state.is_installing_plugins then
     return "  " .. M.get_loading_spinner(state) .. " Installing plugin updates... Please wait."
   elseif state.is_refreshing then
+    local check_msg = is_on_main and "Checking for updates..." or "Seeing what's new on main..."
     if state.is_initial_load then
-      return "  " .. M.get_loading_spinner(state) .. " Checking for updates... Please wait."
+      return "  " .. M.get_loading_spinner(state) .. " " .. check_msg .. " Please wait."
     else
       -- Background refresh with cached data - show subtle indicator
-      return "  " .. M.get_loading_spinner(state) .. " Checking for updates... Please wait. (showing cached data)"
+      return "  " .. M.get_loading_spinner(state) .. " " .. check_msg .. " Please wait. (showing cached data)"
     end
   elseif state.behind_count > 0 or state.has_plugin_updates then
     local messages = {}
@@ -83,7 +86,11 @@ local function generate_status_message(state)
     end
     return "  " .. table.concat(messages, " and ") .. " available!"
   else
-    return "  Your dotfiles and plugins are up to date!"
+    if is_on_main then
+      return "  Your dotfiles and plugins are up to date!"
+    else
+      return "  Your current branch is up to date with the latest commits on main"
+    end
   end
 end
 
@@ -99,22 +106,48 @@ function M.generate_header(state, config)
   table.insert(header, "")
 
   -- Add status message
-  table.insert(header, generate_status_message(state))
+  table.insert(header, generate_status_message(state, config))
   table.insert(header, "")
 
   return header
 end
 
-function M.generate_keybindings(config)
-  return {
-    "  Keybindings:",
-    "    " .. config.keymap.update_all .. " - Update dotfiles + install plugin updates",
-    "    " .. config.keymap.update .. " - Update dotfiles",
-    "    " .. config.keymap.install_plugins .. " - Install plugin updates (:Lazy restore)",
-    "    " .. config.keymap.refresh .. " - Refresh status",
-    "    " .. config.keymap.close .. " - Close window",
-    "",
-  }
+function M.generate_keybindings(state, config)
+  local is_on_main = state.current_branch == config.main_branch
+  local has_any_updates = state.behind_count > 0 or (state.has_plugin_updates and #state.plugin_updates > 0)
+  local lines = { "  Keybindings:" }
+  local keybind_data = {} -- Track keybinds for highlighting
+
+  -- U - Update all: Only show on main branch AND when there are updates available
+  if is_on_main and has_any_updates then
+    table.insert(lines, "    " .. config.keymap.update_all .. " - Update dotfiles + install plugin updates")
+    table.insert(keybind_data, { key = config.keymap.update_all })
+  end
+
+  -- u - Update dotfiles: Only show if behind_count > 0
+  if state.behind_count > 0 then
+    local label = is_on_main and "Update dotfiles" or "Pull latest main into branch"
+    table.insert(lines, "    " .. config.keymap.update .. " - " .. label)
+    table.insert(keybind_data, { key = config.keymap.update })
+  end
+
+  -- i - Install plugins: Only show if plugin updates available
+  if state.has_plugin_updates and #state.plugin_updates > 0 then
+    table.insert(lines, "    " .. config.keymap.install_plugins .. " - Install plugin updates (:Lazy restore)")
+    table.insert(keybind_data, { key = config.keymap.install_plugins })
+  end
+
+  -- r - Refresh: Always show
+  table.insert(lines, "    " .. config.keymap.refresh .. " - Refresh status")
+  table.insert(keybind_data, { key = config.keymap.refresh })
+
+  -- q - Close: Always show
+  table.insert(lines, "    " .. config.keymap.close .. " - Close window")
+  table.insert(keybind_data, { key = config.keymap.close })
+
+  table.insert(lines, "")
+
+  return lines, keybind_data
 end
 
 function M.generate_remote_commits_section(state, config)
@@ -219,23 +252,35 @@ function M.generate_commit_log(state, config)
 end
 
 function M.generate_loading_state(state, config)
-  return {
+  local is_on_main = state.current_branch == config.main_branch
+  local loading_msg = is_on_main and "Checking for updates..." or "Seeing what's new on main..."
+
+  local lines = {
     "",
     "  Branch: " .. (state.current_branch ~= "" and state.current_branch or "Loading..."),
     "",
-    "  " .. M.get_loading_spinner(state) .. " Checking for updates... Please wait.",
+    "  " .. M.get_loading_spinner(state) .. " " .. loading_msg .. " Please wait.",
     "",
     "  Keybindings:",
-    "    " .. config.keymap.update_all .. " - Update dotfiles + install plugin updates",
-    "    " .. config.keymap.update .. " - Update dotfiles",
-    "    " .. config.keymap.install_plugins .. " - Install plugin updates (:Lazy restore)",
-    "    " .. config.keymap.refresh .. " - Refresh status",
-    "    " .. config.keymap.close .. " - Close window",
-    "",
-    "  Loading repository information...",
-    "  This may take a moment if checking remote updates.",
-    "",
   }
+
+  -- During loading, show appropriate keybinds based on branch
+  if is_on_main then
+    table.insert(lines, "    " .. config.keymap.update_all .. " - Update dotfiles + install plugin updates")
+  end
+  table.insert(
+    lines,
+    "    " .. config.keymap.update .. " - " .. (is_on_main and "Update dotfiles" or "Pull latest main into branch")
+  )
+  table.insert(lines, "    " .. config.keymap.install_plugins .. " - Install plugin updates (:Lazy restore)")
+  table.insert(lines, "    " .. config.keymap.refresh .. " - Refresh status")
+  table.insert(lines, "    " .. config.keymap.close .. " - Close window")
+  table.insert(lines, "")
+  table.insert(lines, "  Loading repository information...")
+  table.insert(lines, "  This may take a moment if checking remote updates.")
+  table.insert(lines, "")
+
+  return lines
 end
 
 local function add_highlight(buffer, ns_id, hl_group, line, col_start, col_end)
@@ -252,11 +297,10 @@ local function highlight_status(buffer, ns_id, state, status_line)
   add_highlight(buffer, ns_id, status_hl_group, status_line, 2, -1)
 end
 
-local function highlight_keybindings(buffer, ns_id, keybindings_start)
-  local keys = { "U", "u", "i", "r", "q" }
-  for i = 0, 4 do
-    local line_num = keybindings_start + i
-    add_highlight(buffer, ns_id, "Statement", line_num, 4, 4 + #keys[i + 1])
+local function highlight_keybindings(buffer, ns_id, keybindings_start, keybind_data)
+  for i, data in ipairs(keybind_data) do
+    local line_num = keybindings_start + i -- +1 for "Keybindings:" header, 0-indexed = just +i
+    add_highlight(buffer, ns_id, "Statement", line_num, 4, 4 + #data.key)
   end
 end
 
@@ -363,13 +407,13 @@ local function highlight_commit_log(buffer, ns_id, state, config)
   end
 end
 
-function M.apply_highlighting(state, config, status_line, keybindings_start, restart_reminder_line)
+function M.apply_highlighting(state, config, status_line, keybindings_start, keybind_data, restart_reminder_line)
   local ns_id = vim.api.nvim_create_namespace("DotfilesUpdater")
   vim.api.nvim_buf_clear_namespace(state.buffer, ns_id, 0, -1)
 
   highlight_header(state.buffer, ns_id)
   highlight_status(state.buffer, ns_id, state, status_line)
-  highlight_keybindings(state.buffer, ns_id, keybindings_start)
+  highlight_keybindings(state.buffer, ns_id, keybindings_start, keybind_data)
   highlight_restart_reminder(state.buffer, ns_id, state, restart_reminder_line)
   highlight_remote_commits(state.buffer, ns_id, state, config)
   highlight_plugin_updates(state.buffer, ns_id, state)
@@ -382,17 +426,23 @@ function M.apply_loading_state_highlighting(state, config)
   add_highlight(state.buffer, ns_id, "Directory", 1, 2, -1)
   add_highlight(state.buffer, ns_id, "WarningMsg", 3, 2, -1)
 
-  -- Highlight all keybindings
-  local keybinds = {
-    config.keymap.update_all,
-    config.keymap.update,
-    config.keymap.install_plugins,
-    config.keymap.refresh,
-    config.keymap.close,
-  }
+  local is_on_main = state.current_branch == config.main_branch
+
+  -- Keybindings start at line 6 (0-indexed = 5), after "Keybindings:" header
+  local keybind_line = 6
+
+  -- Build keybinds list based on branch
+  local keybinds = {}
+  if is_on_main then
+    table.insert(keybinds, config.keymap.update_all)
+  end
+  table.insert(keybinds, config.keymap.update)
+  table.insert(keybinds, config.keymap.install_plugins)
+  table.insert(keybinds, config.keymap.refresh)
+  table.insert(keybinds, config.keymap.close)
+
   for i, key in ipairs(keybinds) do
-    local line_num = 5 + i -- Starting from line 6 (0-indexed)
-    add_highlight(state.buffer, ns_id, "Statement", line_num, 4, 4 + #key)
+    add_highlight(state.buffer, ns_id, "Statement", keybind_line + i - 1, 4, 4 + #key)
   end
 end
 

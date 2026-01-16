@@ -130,6 +130,9 @@ end
 
 -- Async operation runner with common setup/cleanup and progress
 local function run_operation_async(options, render_callback)
+  -- Record start time for minimum display time enforcement
+  local start_time = vim.uv.now()
+
   -- Set operation status
   if options.status_field then
     Status.state[options.status_field] = true
@@ -172,6 +175,19 @@ local function run_operation_async(options, render_callback)
       if error_msg then
         handle_error(options.name, error_msg)
       end
+
+      -- Enforce minimum display time if specified
+      if options.min_display_time_ms then
+        local elapsed = vim.uv.now() - start_time
+        local remaining = options.min_display_time_ms - elapsed
+        if remaining > 0 then
+          vim.defer_fn(function()
+            cleanup(success ~= false)
+          end, remaining)
+          return
+        end
+      end
+
       cleanup(success ~= false)
     end)
   end
@@ -189,6 +205,7 @@ function M.refresh(config, render_callback)
     name = "refresh",
     status_field = "is_refreshing",
     delay_ms = 100, -- Small delay to let UI render first
+    min_display_time_ms = 2000, -- Ensure loading state is visible long enough to read
     progress = {
       title = "Updater",
       message = "Checking for updates...",

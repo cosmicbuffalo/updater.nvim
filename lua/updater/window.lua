@@ -64,7 +64,7 @@ function M.render(config)
   vim.api.nvim_buf_set_lines(Status.state.buffer, 0, -1, false, {})
 
   local header = UI.generate_header(Status.state, config)
-  local keybindings = UI.generate_keybindings(config)
+  local keybindings, keybind_data = UI.generate_keybindings(Status.state, config)
   local remote_commit_info = UI.generate_remote_commits_section(Status.state, config)
   local plugin_update_info = UI.generate_plugin_updates_section(Status.state)
   local restart_reminder = UI.generate_restart_reminder_section(Status.state)
@@ -108,7 +108,7 @@ function M.render(config)
   end
 
   vim.api.nvim_buf_set_lines(Status.state.buffer, 0, -1, false, lines)
-  UI.apply_highlighting(Status.state, config, status_line, keybindings_start, restart_reminder_line)
+  UI.apply_highlighting(Status.state, config, status_line, keybindings_start, keybind_data, restart_reminder_line)
 
   vim.api.nvim_buf_set_option(Status.state.buffer, "modifiable", false)
   vim.api.nvim_win_set_height(Status.state.window, math.min(#lines + 1, Constants.MAX_WINDOW_HEIGHT_LINES))
