@@ -209,9 +209,6 @@ function M.setup_config(opts)
     return nil, "updater.nvim: " .. sanitize_err
   end
 
-  -- Git validation is deferred to first use (lazy validation)
-  -- This avoids blocking Neovim startup with a synchronous git command
-
   merged_config.repo_path = sanitized_path
 
   return merged_config

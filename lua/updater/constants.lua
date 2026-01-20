@@ -5,6 +5,7 @@ M.SPINNER_INTERVAL = 100 -- Spinner animation interval (ms)
 M.PROGRESS_SUCCESS_DURATION = 1500 -- How long to show "Updates available!" (ms)
 M.PROGRESS_FINISH_DURATION = 1000 -- How long to show "Up to date" (ms)
 M.STARTUP_CHECK_DELAY = 200 -- Delay for startup check (ms)
+M.TIMEOUT_EXIT_CODE = 124 -- Exit code for command timeout
 
 -- UI layout constants
 M.WINDOW_WIDTH_RATIO = 0.9 -- Window width as ratio of screen width

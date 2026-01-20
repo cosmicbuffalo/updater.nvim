@@ -15,8 +15,7 @@ local function execute_command_async(cmd, timeout_key, config, callback)
     timeout = timeout,
   }, function(obj)
     vim.schedule(function()
-      if obj.code == 124 then
-        -- Timeout exit code
+      if obj.code == Constants.TIMEOUT_EXIT_CODE then
         callback(nil, Errors.timeout_error("Command execution", timeout / 1000))
       elseif obj.code ~= 0 then
         callback(nil, obj.stderr or "Command failed with exit code " .. obj.code)
