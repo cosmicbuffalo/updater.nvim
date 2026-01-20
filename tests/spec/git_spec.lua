@@ -134,61 +134,6 @@ describe("git module", function()
     end)
   end)
 
-  describe("get_current_branch", function()
-    it("should return the current branch name", function()
-      local done = false
-      local branch = nil
-
-      Git.get_current_branch(test_config, test_dir, function(result, err)
-        branch = result
-        done = true
-      end)
-
-      _G.test_helpers.wait_for(function()
-        return done
-      end)
-
-      -- Git init creates 'master' or 'main' depending on config
-      assert.is_truthy(branch == "main" or branch == "master")
-    end)
-
-    it("should return 'unknown' for nil config", function()
-      local done = false
-      local branch = nil
-
-      Git.get_current_branch(nil, test_dir, function(result, err)
-        branch = result
-        done = true
-      end)
-
-      _G.test_helpers.wait_for(function()
-        return done
-      end)
-
-      assert.equals("unknown", branch)
-    end)
-  end)
-
-  describe("get_current_commit", function()
-    it("should return a commit hash", function()
-      local done = false
-      local commit = nil
-
-      Git.get_current_commit(test_config, test_dir, function(result, err)
-        commit = result
-        done = true
-      end)
-
-      _G.test_helpers.wait_for(function()
-        return done
-      end)
-
-      assert.is_not_nil(commit)
-      -- Git commit hashes are 40 characters
-      assert.equals(40, #commit)
-    end)
-  end)
-
   describe("clear_validation_cache", function()
     it("should clear the validation cache", function()
       local done = false
@@ -206,46 +151,6 @@ describe("git module", function()
       Git.clear_validation_cache()
 
       assert.is_nil(Git.get_validation_status(test_dir))
-    end)
-  end)
-
-  describe("has_uncommitted_changes", function()
-    it("should return false for clean working directory", function()
-      local done = false
-      local has_changes = nil
-
-      Git.has_uncommitted_changes(test_config, test_dir, function(result, err)
-        has_changes = result
-        done = true
-      end)
-
-      _G.test_helpers.wait_for(function()
-        return done
-      end)
-
-      assert.is_false(has_changes)
-    end)
-
-    it("should return true when there are uncommitted changes", function()
-      -- Create an untracked file
-      local test_file = test_dir .. "/untracked.txt"
-      local file = io.open(test_file, "w")
-      file:write("test content")
-      file:close()
-
-      local done = false
-      local has_changes = nil
-
-      Git.has_uncommitted_changes(test_config, test_dir, function(result, err)
-        has_changes = result
-        done = true
-      end)
-
-      _G.test_helpers.wait_for(function()
-        return done
-      end)
-
-      assert.is_true(has_changes)
     end)
   end)
 

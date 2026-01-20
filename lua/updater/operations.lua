@@ -114,19 +114,17 @@ local function refresh_data_async(config, callback)
 end
 
 local function update_git_repo_async(config, operation_name, callback)
-  Git.get_current_branch(config, config.repo_path, function(branch, _)
-    Git.update_repo(config, config.repo_path, branch, function(success, message)
-      if success then
-        Status.state.needs_update = false
-        Status.state.recently_updated_dotfiles = true
-      else
-        handle_error(operation_name, message or "Git update failed")
-      end
+  Git.update_repo(config, config.repo_path, function(success, message)
+    if success then
+      Status.state.needs_update = false
+      Status.state.recently_updated_dotfiles = true
+    else
+      handle_error(operation_name, message or "Git update failed")
+    end
 
-      if callback then
-        callback(success)
-      end
-    end)
+    if callback then
+      callback(success)
+    end
   end)
 end
 

@@ -24,7 +24,7 @@ local function execute_command_async(cmd, timeout_key, config, callback)
   end)
 end
 
-function M.execute_git_command(git_cmd, timeout_key, operation_name, config, repo_path, callback)
+function M.execute_command(git_cmd, timeout_key, operation_name, config, repo_path, callback)
   local cd_cmd = "cd " .. vim.fn.shellescape(repo_path) .. " && "
   local full_cmd = cd_cmd .. git_cmd
 
@@ -84,17 +84,17 @@ local function parse_commits_from_output(result)
 end
 
 function M.get_current_commit(config, repo_path, callback)
-  M.execute_git_command("git rev-parse HEAD", "status", "Git status check", config, repo_path, function(result, err)
+  M.execute_command("git rev-parse HEAD", "status", "Git status check", config, repo_path, function(result, err)
     callback(result, err)
   end)
 end
 
-function M.get_current_branch(config, repo_path, callback)
+local function get_current_branch(config, repo_path, callback)
   if not config or not repo_path then
     callback("unknown", nil)
     return
   end
-  M.execute_git_command(
+  M.execute_command(
     "git rev-parse --abbrev-ref HEAD",
     "status",
     "Git branch check",
@@ -115,7 +115,7 @@ function M.get_ahead_behind_count(config, repo_path, branch, callback)
   local main = config.main_branch
   local compare_with = "origin/" .. main
 
-  M.execute_git_command(
+  M.execute_command(
     "git rev-list --left-right --count " .. branch .. "..." .. compare_with,
     "status",
     "Git count operation",
@@ -134,7 +134,7 @@ function M.get_ahead_behind_count(config, repo_path, branch, callback)
 end
 
 local function is_commit_in_branch_async(commit_hash, branch, config, repo_path, callback)
-  M.execute_git_command(
+  M.execute_command(
     "git branch --contains " .. commit_hash .. " | grep -q " .. branch .. " && echo yes || echo no",
     "status",
     "Git branch check",
@@ -170,7 +170,7 @@ function M.get_commit_log(config, repo_path, current_branch, ahead_count, behind
     end
   end
 
-  M.execute_git_command(git_cmd, "log", "Git log operation", config, repo_path, function(result, err)
+  M.execute_command(git_cmd, "log", "Git log operation", config, repo_path, function(result, err)
     if not result then
       callback({}, log_type, err)
       return
@@ -191,7 +191,7 @@ function M.get_remote_commits_not_in_local(config, repo_path, current_branch, ca
     current_branch
   )
 
-  M.execute_git_command(git_cmd, "log", "Git log operation", config, repo_path, function(result, err)
+  M.execute_command(git_cmd, "log", "Git log operation", config, repo_path, function(result, err)
     if not result then
       callback({}, err)
       return
@@ -202,13 +202,13 @@ function M.get_remote_commits_not_in_local(config, repo_path, current_branch, ca
 end
 
 function M.get_repo_status(config, repo_path, callback)
-  M.execute_git_command("git fetch", "fetch", "Git fetch operation", config, repo_path, function(_, fetch_err)
+  M.execute_command("git fetch", "fetch", "Git fetch operation", config, repo_path, function(_, fetch_err)
     if fetch_err then
       callback({ error = true })
       return
     end
 
-    M.get_current_branch(config, repo_path, function(branch, _)
+    get_current_branch(config, repo_path, function(branch, _)
       M.get_ahead_behind_count(config, repo_path, branch, function(ahead, behind, _)
         callback({
           branch = branch,
@@ -224,8 +224,8 @@ function M.get_repo_status(config, repo_path, callback)
   end)
 end
 
-function M.has_uncommitted_changes(config, repo_path, callback)
-  M.execute_git_command("git status --porcelain", "status", "Git status", config, repo_path, function(result, err)
+local function has_uncommitted_changes(config, repo_path, callback)
+  M.execute_command("git status --porcelain", "status", "Git status", config, repo_path, function(result, err)
     if err then
       callback(nil, err)
     else
@@ -239,7 +239,7 @@ end
 function M.rollback_to_commit(config, repo_path, commit_hash, callback)
   local rollback_cmd = "git merge --abort 2>/dev/null || true; git rebase --abort 2>/dev/null || true; git reset --hard "
     .. commit_hash
-  M.execute_git_command(rollback_cmd, "default", "Rollback", config, repo_path, function(_, err)
+  M.execute_command(rollback_cmd, "default", "Rollback", config, repo_path, function(_, err)
     if err then
       callback(false, "Failed to rollback: " .. err)
     else
@@ -397,16 +397,23 @@ local function handle_update_result(config, current_branch, result, err, timeout
 end
 
 -- Update repo (fetch + pull/merge with rollback on failure)
-function M.update_repo(config, repo_path, current_branch, callback)
-  -- Step 1: Save current HEAD for potential rollback
-  M.get_current_commit(config, repo_path, function(saved_head, head_err)
+function M.update_repo(config, repo_path, callback)
+  -- Get current branch first
+  get_current_branch(config, repo_path, function(current_branch, branch_err)
+    if branch_err or not current_branch or current_branch == "unknown" then
+      callback(false, "Failed to get current branch: " .. (branch_err or "Unknown error"))
+      return
+    end
+
+    -- Step 1: Save current HEAD for potential rollback
+    M.get_current_commit(config, repo_path, function(saved_head, head_err)
     if head_err or not saved_head then
       callback(false, "Failed to save current state: " .. (head_err or "Unknown error"))
       return
     end
 
     -- Step 2: Check for uncommitted changes
-    M.has_uncommitted_changes(config, repo_path, function(has_uncommitted, status_err)
+    has_uncommitted_changes(config, repo_path, function(has_uncommitted, status_err)
       if status_err then
         callback(false, "Failed to check working directory status: " .. status_err)
         return
@@ -453,6 +460,7 @@ function M.update_repo(config, repo_path, current_branch, callback)
         )
       end)
     end)
+  end)
   end)
 end
 
