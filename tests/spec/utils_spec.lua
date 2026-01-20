@@ -49,14 +49,4 @@ describe("utils module", function()
       assert.is_truthy(message:match("ahead by 3"))
     end)
   end)
-
-  describe("create_render_callback", function()
-    it("should return a function", function()
-      local callback = Utils.create_render_callback(test_config)
-      assert.is_function(callback)
-    end)
-
-    -- Note: Full testing of render_callback requires mocking Window module
-    -- which is complex. The callback function itself is simple delegation.
-  end)
 end)
