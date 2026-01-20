@@ -2,10 +2,8 @@ local Constants = require("updater.constants")
 local Errors = require("updater.errors")
 local M = {}
 
--- Track git repository validation state
 local validation_cache = {}
 
--- Async command execution using vim.system() (Neovim 0.10+)
 local function execute_command_async(cmd, timeout_key, config, callback)
   timeout_key = timeout_key or "default"
   local timeout = (config.timeouts[timeout_key] or config.timeouts.default) * 1000 -- Convert to ms
@@ -26,7 +24,6 @@ local function execute_command_async(cmd, timeout_key, config, callback)
   end)
 end
 
--- Async git command execution with callback
 function M.execute_git_command(git_cmd, timeout_key, operation_name, config, repo_path, callback)
   local cd_cmd = "cd " .. vim.fn.shellescape(repo_path) .. " && "
   local full_cmd = cd_cmd .. git_cmd
@@ -86,14 +83,12 @@ local function parse_commits_from_output(result)
   return commits
 end
 
--- Async get current commit
 function M.get_current_commit(config, repo_path, callback)
   M.execute_git_command("git rev-parse HEAD", "status", "Git status check", config, repo_path, function(result, err)
     callback(result, err)
   end)
 end
 
--- Async get current branch
 function M.get_current_branch(config, repo_path, callback)
   if not config or not repo_path then
     callback("unknown", nil)
@@ -111,7 +106,6 @@ function M.get_current_branch(config, repo_path, callback)
   )
 end
 
--- Async get ahead/behind count
 function M.get_ahead_behind_count(config, repo_path, branch, callback)
   if not config or not repo_path or not config.main_branch then
     callback(0, 0, nil)
@@ -139,7 +133,6 @@ function M.get_ahead_behind_count(config, repo_path, branch, callback)
   )
 end
 
--- Async check if commit is in branch
 local function is_commit_in_branch_async(commit_hash, branch, config, repo_path, callback)
   M.execute_git_command(
     "git branch --contains " .. commit_hash .. " | grep -q " .. branch .. " && echo yes || echo no",
@@ -153,7 +146,6 @@ local function is_commit_in_branch_async(commit_hash, branch, config, repo_path,
   )
 end
 
--- Async get commit log
 function M.get_commit_log(config, repo_path, current_branch, ahead_count, behind_count, callback)
   local main = config.main_branch
   local log_format = string.format('--format=format:"%%h|%%s|%%an|%%ar" -n %d', config.log_count)
@@ -188,7 +180,6 @@ function M.get_commit_log(config, repo_path, current_branch, ahead_count, behind
   end)
 end
 
--- Async get remote commits not in local
 function M.get_remote_commits_not_in_local(config, repo_path, current_branch, callback)
   local main = config.main_branch
   local compare_with = "origin/" .. main
@@ -210,7 +201,6 @@ function M.get_remote_commits_not_in_local(config, repo_path, current_branch, ca
   end)
 end
 
--- Async get repo status (fetch + branch + ahead/behind)
 function M.get_repo_status(config, repo_path, callback)
   M.execute_git_command("git fetch", "fetch", "Git fetch operation", config, repo_path, function(_, fetch_err)
     if fetch_err then
@@ -234,7 +224,6 @@ function M.get_repo_status(config, repo_path, callback)
   end)
 end
 
--- Async check for uncommitted changes in working directory
 function M.has_uncommitted_changes(config, repo_path, callback)
   M.execute_git_command("git status --porcelain", "status", "Git status", config, repo_path, function(result, err)
     if err then
@@ -247,7 +236,6 @@ function M.has_uncommitted_changes(config, repo_path, callback)
   end)
 end
 
--- Async rollback to a specific commit (aborts any in-progress merge/rebase first)
 function M.rollback_to_commit(config, repo_path, commit_hash, callback)
   local rollback_cmd = "git merge --abort 2>/dev/null || true; git rebase --abort 2>/dev/null || true; git reset --hard "
     .. commit_hash
@@ -260,7 +248,6 @@ function M.rollback_to_commit(config, repo_path, commit_hash, callback)
   end)
 end
 
--- Async check commits in branch (processes commits one by one)
 function M.are_commits_in_branch(commits, branch, config, repo_path, callback)
   local result = {}
   local remaining = #commits
@@ -281,7 +268,6 @@ function M.are_commits_in_branch(commits, branch, config, repo_path, callback)
   end
 end
 
--- Async fetch updates
 local function fetch_updates_async(config, repo_path, callback)
   local cd_cmd = "cd " .. vim.fn.shellescape(repo_path) .. " && "
 
@@ -303,7 +289,7 @@ local function fetch_updates_async(config, repo_path, callback)
   end)
 end
 
--- Async execute update command (pull or merge)
+-- Execute update command (pull or merge)
 -- For non-main branches, uses git stash to handle uncommitted changes
 local function execute_update_command_async(config, repo_path, current_branch, has_uncommitted, callback)
   local cd_cmd = "cd " .. vim.fn.shellescape(repo_path) .. " && "
@@ -396,7 +382,6 @@ local function handle_update_result(config, current_branch, result, err, timeout
     return false, error_msg, true
   end
 
-  -- Success case
   local success_msg
   if result:match("Already up to date") then
     success_msg = "Already up to date with origin/" .. config.main_branch
@@ -411,7 +396,7 @@ local function handle_update_result(config, current_branch, result, err, timeout
   return true, success_msg, false
 end
 
--- Async update repo (fetch + pull/merge with rollback on failure)
+-- Update repo (fetch + pull/merge with rollback on failure)
 function M.update_repo(config, repo_path, current_branch, callback)
   -- Step 1: Save current HEAD for potential rollback
   M.get_current_commit(config, repo_path, function(saved_head, head_err)
@@ -471,14 +456,12 @@ function M.update_repo(config, repo_path, current_branch, callback)
   end)
 end
 
--- Async validate git repository (with caching)
 function M.validate_git_repository(path, callback)
   if not path then
     callback(false, "No repository path provided")
     return
   end
 
-  -- Check cache first
   if validation_cache[path] ~= nil then
     callback(validation_cache[path], validation_cache[path] == false and "Cached: invalid git repository" or nil)
     return

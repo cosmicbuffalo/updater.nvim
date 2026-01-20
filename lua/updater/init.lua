@@ -15,11 +15,10 @@ M.status = Status
 
 local config = {}
 
--- Get current config (for health checks and external integrations)
 function M.get_config()
   return config
 end
-local state = Status.state -- Local reference for DRY code
+local state = Status.state
 
 local function render_callback(mode)
   if mode == "loading" then
@@ -41,7 +40,6 @@ function M.open()
 
   Window.create_window(config)
 
-  -- Setup keymaps with callbacks
   Window.setup_keymaps(config, {
     close = M.close,
     update = function()
@@ -81,7 +79,6 @@ function M.refresh()
   Operations.refresh(config, render_callback)
 end
 
--- Async check for updates (non-blocking)
 function M.check_updates()
   -- First validate the git repository (async, with caching)
   Git.validate_git_repository(config.repo_path, function(is_valid, validation_err)

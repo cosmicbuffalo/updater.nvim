@@ -1,19 +1,16 @@
 local M = {}
 
--- Get the health API (vim.health for 0.10+, or fallback)
 local health = vim.health
 
 function M.check()
   health.start("updater.nvim")
 
-  -- Check git command availability
   if vim.fn.executable("git") == 1 then
     health.ok("git command available")
   else
     health.error("git command not found in PATH", { "Install git and ensure it's in your PATH" })
   end
 
-  -- Check timeout utility
   local timeout_utility = "timeout"
   if vim.fn.executable(timeout_utility) == 1 then
     health.ok(timeout_utility .. " command available")
@@ -24,7 +21,6 @@ function M.check()
     })
   end
 
-  -- Check Neovim version (we require 0.10+ for vim.system)
   local nvim_version = vim.version()
   if nvim_version.major > 0 or (nvim_version.major == 0 and nvim_version.minor >= 10) then
     health.ok("Neovim version " .. tostring(nvim_version) .. " (0.10+ required for async operations)")
@@ -35,21 +31,18 @@ function M.check()
     })
   end
 
-  -- Check if plugin is configured
   local ok, updater = pcall(require, "updater")
   if not ok then
     health.error("Failed to load updater module")
     return
   end
 
-  -- Try to get config from status module
   local status_ok, Status = pcall(require, "updater.status")
   if not status_ok then
     health.error("Failed to load updater.status module")
     return
   end
 
-  -- Check for lazy.nvim (optional dependency)
   local plugins_ok, Plugins = pcall(require, "updater.plugins")
   if plugins_ok and Plugins.is_lazy_available() then
     health.ok("lazy.nvim detected - plugin update tracking enabled")
@@ -57,7 +50,6 @@ function M.check()
     health.info("lazy.nvim not detected - plugin update tracking disabled")
   end
 
-  -- Check for fidget.nvim (optional dependency)
   local progress_ok, Progress = pcall(require, "updater.progress")
   if progress_ok and Progress.is_fidget_available() then
     health.ok("fidget.nvim detected - progress indicators enabled")
@@ -65,7 +57,6 @@ function M.check()
     health.info("fidget.nvim not detected - using notifications only")
   end
 
-  -- Check debug mode status
   if Status.state.debug_enabled then
     health.warn("Debug mode is enabled", {
       "Debug mode simulates updates and may not reflect real repository state",
@@ -75,7 +66,6 @@ function M.check()
     health.ok("Debug mode disabled")
   end
 
-  -- Check repository validation status
   local git_ok, Git = pcall(require, "updater.git")
   local cfg = updater.get_config()
 
