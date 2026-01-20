@@ -133,7 +133,7 @@ function M.get_ahead_behind_count(config, repo_path, branch, callback)
   )
 end
 
-local function is_commit_in_branch_async(commit_hash, branch, config, repo_path, callback)
+local function is_commit_in_branch(commit_hash, branch, config, repo_path, callback)
   M.execute_command(
     "git branch --contains " .. commit_hash .. " | grep -q " .. branch .. " && echo yes || echo no",
     "status",
@@ -258,7 +258,7 @@ function M.are_commits_in_branch(commits, branch, config, repo_path, callback)
   end
 
   for _, commit in ipairs(commits) do
-    is_commit_in_branch_async(commit.hash, branch, config, repo_path, function(is_in_branch, _)
+    is_commit_in_branch(commit.hash, branch, config, repo_path, function(is_in_branch, _)
       result[commit.hash] = is_in_branch
       remaining = remaining - 1
       if remaining == 0 then
@@ -291,7 +291,7 @@ end
 
 -- Execute update command (pull or merge)
 -- For non-main branches, uses git stash to handle uncommitted changes
-local function execute_update_command_async(config, repo_path, current_branch, has_uncommitted, callback)
+local function execute_update_command(config, repo_path, current_branch, has_uncommitted, callback)
   local cd_cmd = "cd " .. vim.fn.shellescape(repo_path) .. " && "
   local cmd, timeout_key
 
@@ -407,32 +407,27 @@ function M.update_repo(config, repo_path, callback)
 
     -- Step 1: Save current HEAD for potential rollback
     M.get_current_commit(config, repo_path, function(saved_head, head_err)
-    if head_err or not saved_head then
-      callback(false, "Failed to save current state: " .. (head_err or "Unknown error"))
-      return
-    end
-
-    -- Step 2: Check for uncommitted changes
-    has_uncommitted_changes(config, repo_path, function(has_uncommitted, status_err)
-      if status_err then
-        callback(false, "Failed to check working directory status: " .. status_err)
+      if head_err or not saved_head then
+        callback(false, "Failed to save current state: " .. (head_err or "Unknown error"))
         return
       end
 
-      -- Step 3: Fetch updates
-      fetch_updates_async(config, repo_path, function(fetch_success, fetch_error)
-        if not fetch_success then
-          callback(false, fetch_error)
+      -- Step 2: Check for uncommitted changes
+      has_uncommitted_changes(config, repo_path, function(has_uncommitted, status_err)
+        if status_err then
+          callback(false, "Failed to check working directory status: " .. status_err)
           return
         end
 
-        -- Step 4: Execute update command
-        execute_update_command_async(
-          config,
-          repo_path,
-          current_branch,
-          has_uncommitted,
-          function(result, err, timeout_key)
+        -- Step 3: Fetch updates
+        fetch_updates_async(config, repo_path, function(fetch_success, fetch_error)
+          if not fetch_success then
+            callback(false, fetch_error)
+            return
+          end
+
+          -- Step 4: Execute update command
+          execute_update_command(config, repo_path, current_branch, has_uncommitted, function(result, err, timeout_key)
             -- Step 5: Handle result
             local success, message, rollback_needed =
               handle_update_result(config, current_branch, result, err, timeout_key)
@@ -456,11 +451,10 @@ function M.update_repo(config, repo_path, callback)
             else
               callback(success, message)
             end
-          end
-        )
+          end)
+        end)
       end)
     end)
-  end)
   end)
 end
 

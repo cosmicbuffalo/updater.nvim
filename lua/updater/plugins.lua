@@ -140,7 +140,7 @@ local function get_commit_timestamps_batch(plugin_list, callback)
 end
 
 -- Get plugin updates asynchronously with direction detection (behind/ahead)
-function M.get_plugin_updates_async(config, callback)
+function M.get_plugin_updates(config, callback)
   local empty_result = { all_updates = {}, plugins_behind = {}, plugins_ahead = {} }
 
   if not config then
@@ -286,7 +286,7 @@ function M.install_plugin_updates(config, render_callback)
       else
         vim.notify("Successfully restored plugins from lockfile!", vim.log.levels.INFO, { title = "Plugin Updates" })
         -- Re-check plugin status asynchronously to update all state fields
-        M.get_plugin_updates_async(config, function(plugin_result)
+        M.get_plugin_updates(config, function(plugin_result)
           Status.state.plugin_updates = plugin_result.all_updates
           Status.state.plugins_behind = plugin_result.plugins_behind
           Status.state.plugins_ahead = plugin_result.plugins_ahead

@@ -53,12 +53,12 @@ describe("plugins module", function()
     end)
   end)
 
-  describe("get_plugin_updates_async", function()
+  describe("get_plugin_updates", function()
     it("should call callback with empty result when config is nil", function()
       local result
       local captured = _G.test_helpers.capture_notifications()
 
-      Plugins.get_plugin_updates_async(nil, function(r)
+      Plugins.get_plugin_updates(nil, function(r)
         result = r
       end)
 
@@ -77,7 +77,7 @@ describe("plugins module", function()
       local result
       local captured = _G.test_helpers.capture_notifications()
 
-      Plugins.get_plugin_updates_async({ repo_path = "" }, function(r)
+      Plugins.get_plugin_updates({ repo_path = "" }, function(r)
         result = r
       end)
 
@@ -92,7 +92,7 @@ describe("plugins module", function()
     it("should call callback with empty result when lockfile does not exist", function()
       local result
 
-      Plugins.get_plugin_updates_async(test_config, function(r)
+      Plugins.get_plugin_updates(test_config, function(r)
         result = r
       end)
 
@@ -105,7 +105,7 @@ describe("plugins module", function()
     it("should return result with proper structure", function()
       local result
 
-      Plugins.get_plugin_updates_async(test_config, function(r)
+      Plugins.get_plugin_updates(test_config, function(r)
         result = r
       end)
 

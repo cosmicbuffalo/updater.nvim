@@ -31,7 +31,96 @@ local function safe_callback(render_callback, mode)
   end
 end
 
-local function refresh_data_async(config, callback)
+local function refresh_step_6_get_plugin_updates(config, callback)
+  Plugins.get_plugin_updates(config, function(result)
+    Status.state.plugin_updates = result.all_updates
+    Status.state.plugins_behind = result.plugins_behind
+    Status.state.plugins_ahead = result.plugins_ahead
+    Status.state.has_plugin_updates = #result.all_updates > 0
+    Status.state.has_plugins_behind = #result.plugins_behind > 0
+    Status.state.has_plugins_ahead = #result.plugins_ahead > 0
+    Status.state.last_check_time = os.time()
+
+    -- Step 7: Update cache
+    Cache.update_after_check(config.repo_path, Status.state, function()
+      if callback then
+        callback()
+      end
+    end)
+  end)
+end
+
+local function refresh_step_5_get_commit_log(config, callback)
+  Git.get_commit_log(
+    config,
+    config.repo_path,
+    Status.state.current_branch,
+    Status.state.ahead_count,
+    Status.state.behind_count,
+    function(commits, log_type, _)
+      Status.state.commits = commits
+      Status.state.log_type = log_type
+
+      refresh_step_6_get_plugin_updates(config, callback)
+    end
+  )
+end
+
+local function refresh_step_4_are_commits_in_branch(config, callback)
+  Git.are_commits_in_branch(
+    Status.state.remote_commits,
+    Status.state.current_branch,
+    config,
+    config.repo_path,
+    function(commits_in_branch)
+      Status.state.commits_in_branch = commits_in_branch
+
+      refresh_step_5_get_commit_log(config, callback)
+    end
+  )
+end
+
+local function refresh_step_3_get_remote_commits(config, callback)
+  Git.get_remote_commits_not_in_local(config, config.repo_path, Status.state.current_branch, function(remote_commits, _)
+    Status.state.remote_commits = remote_commits
+    Status.state.needs_update = #remote_commits > 0
+
+    refresh_step_4_are_commits_in_branch(config, callback)
+  end)
+end
+
+local function refresh_step_2_repo_status(config, callback)
+  Git.get_repo_status(config, config.repo_path, function(status)
+    if status.error then
+      Status.state.needs_update = false
+      Status.state.has_plugin_updates = false
+      Status.state.has_plugins_behind = false
+      Status.state.has_plugins_ahead = false
+      Status.state.last_check_time = os.time()
+      if callback then
+        callback()
+      end
+      return
+    end
+
+    Status.state.current_branch = status.branch
+    Status.state.ahead_count = status.ahead
+    Status.state.behind_count = status.behind
+
+    refresh_step_3_get_remote_commits(config, callback)
+  end)
+end
+
+local function start_refresh_logic(config, callback)
+  -- Step 1: Get current commit
+  Git.get_current_commit(config, config.repo_path, function(commit, _)
+    Status.state.current_commit = commit
+
+    refresh_step_2_repo_status(config, callback)
+  end)
+end
+
+local function refresh_data(config, callback)
   if should_use_debug_mode() then
     get_debug_module().simulate_refresh_data()
     if callback then
@@ -40,80 +129,10 @@ local function refresh_data_async(config, callback)
     return
   end
 
-  -- Step 1: Get current commit
-  Git.get_current_commit(config, config.repo_path, function(commit, _)
-    Status.state.current_commit = commit
-
-    -- Step 2: Get repo status (includes fetch)
-    Git.get_repo_status(config, config.repo_path, function(status)
-      if status.error then
-        Status.state.needs_update = false
-        Status.state.has_plugin_updates = false
-        Status.state.has_plugins_behind = false
-        Status.state.has_plugins_ahead = false
-        Status.state.last_check_time = os.time()
-        if callback then
-          callback()
-        end
-        return
-      end
-
-      Status.state.current_branch = status.branch
-      Status.state.ahead_count = status.ahead
-      Status.state.behind_count = status.behind
-
-      -- Step 3: Get remote commits
-      Git.get_remote_commits_not_in_local(config, config.repo_path, status.branch, function(remote_commits, _)
-        Status.state.remote_commits = remote_commits
-        Status.state.needs_update = #remote_commits > 0
-
-        -- Step 4: Check which commits are in branch
-        Git.are_commits_in_branch(
-          Status.state.remote_commits,
-          Status.state.current_branch,
-          config,
-          config.repo_path,
-          function(commits_in_branch)
-            Status.state.commits_in_branch = commits_in_branch
-
-            -- Step 5: Get commit log
-            Git.get_commit_log(
-              config,
-              config.repo_path,
-              Status.state.current_branch,
-              Status.state.ahead_count,
-              Status.state.behind_count,
-              function(commits, log_type, _)
-                Status.state.commits = commits
-                Status.state.log_type = log_type
-
-                -- Step 6: Get plugin updates with direction detection
-                Plugins.get_plugin_updates_async(config, function(result)
-                  Status.state.plugin_updates = result.all_updates
-                  Status.state.plugins_behind = result.plugins_behind
-                  Status.state.plugins_ahead = result.plugins_ahead
-                  Status.state.has_plugin_updates = #result.all_updates > 0
-                  Status.state.has_plugins_behind = #result.plugins_behind > 0
-                  Status.state.has_plugins_ahead = #result.plugins_ahead > 0
-                  Status.state.last_check_time = os.time()
-
-                  -- Step 7: Update cache
-                  Cache.update_after_check(config.repo_path, Status.state, function()
-                    if callback then
-                      callback()
-                    end
-                  end)
-                end)
-              end
-            )
-          end
-        )
-      end)
-    end)
-  end)
+  start_refresh_logic(config, callback)
 end
 
-local function update_git_repo_async(config, operation_name, callback)
+local function update_git_repo(config, operation_name, callback)
   Git.update_repo(config, config.repo_path, function(success, message)
     if success then
       Status.state.needs_update = false
@@ -128,7 +147,7 @@ local function update_git_repo_async(config, operation_name, callback)
   end)
 end
 
-local function run_operation_async(options, render_callback)
+local function run_operation(options, render_callback)
   local start_time = vim.uv.now()
 
   if options.status_field then
@@ -193,7 +212,7 @@ local function run_operation_async(options, render_callback)
 end
 
 function M.refresh(config, render_callback)
-  run_operation_async({
+  run_operation({
     name = "refresh",
     status_field = "is_refreshing",
     delay_ms = 100, -- Small delay to let UI render first
@@ -206,7 +225,7 @@ function M.refresh(config, render_callback)
       end,
     },
     operation = function(done)
-      refresh_data_async(config, function()
+      refresh_data(config, function()
         Status.state.is_initial_load = false
         done(true)
       end)
@@ -215,7 +234,7 @@ function M.refresh(config, render_callback)
 end
 
 function M.update_repo(config, render_callback)
-  run_operation_async({
+  run_operation({
     name = "update_repo",
     status_field = "is_updating",
     progress = {
@@ -226,9 +245,9 @@ function M.update_repo(config, render_callback)
       end,
     },
     operation = function(done)
-      update_git_repo_async(config, "update_repo", function(success)
+      update_git_repo(config, "update_repo", function(success)
         if success then
-          refresh_data_async(config, function()
+          refresh_data(config, function()
             done(true)
           end)
         else
@@ -240,7 +259,7 @@ function M.update_repo(config, render_callback)
 end
 
 function M.update_dotfiles_and_plugins(config, render_callback)
-  run_operation_async({
+  run_operation({
     name = "update_dotfiles_and_plugins",
     status_field = "is_updating",
     progress = {
@@ -251,9 +270,9 @@ function M.update_dotfiles_and_plugins(config, render_callback)
       end,
     },
     operation = function(done)
-      update_git_repo_async(config, "update_dotfiles_and_plugins", function(success)
+      update_git_repo(config, "update_dotfiles_and_plugins", function(success)
         if success then
-          refresh_data_async(config, function()
+          refresh_data(config, function()
             Plugins.install_plugin_updates(config, render_callback)
             done(true)
           end)
@@ -291,7 +310,7 @@ function M.check_updates_silent(config, callback)
     Status.state.behind_count = status.behind
     Status.state.needs_update = status.behind > 0
 
-    Plugins.get_plugin_updates_async(config, function(result)
+    Plugins.get_plugin_updates(config, function(result)
       Status.state.plugin_updates = result.all_updates
       Status.state.plugins_behind = result.plugins_behind
       Status.state.plugins_ahead = result.plugins_ahead
