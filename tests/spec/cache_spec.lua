@@ -11,24 +11,6 @@ describe("cache module", function()
     _G.test_helpers.cleanup_temp_dir(test_dir)
   end)
 
-  describe("get_cache_path", function()
-    it("should return a path based on repo_path hash", function()
-      local path1 = Cache.get_cache_path("/path/to/repo1")
-      local path2 = Cache.get_cache_path("/path/to/repo2")
-
-      assert.is_not_nil(path1)
-      assert.is_not_nil(path2)
-      assert.is_not.equals(path1, path2)
-    end)
-
-    it("should return consistent path for same repo_path", function()
-      local path1 = Cache.get_cache_path("/path/to/repo")
-      local path2 = Cache.get_cache_path("/path/to/repo")
-
-      assert.equals(path1, path2)
-    end)
-  end)
-
   describe("write and read", function()
     it("should write and read cache data asynchronously", function()
       local write_done = false

@@ -4,32 +4,31 @@ local CACHE_VERSION = 1
 local CACHE_DIR_NAME = "updater.nvim"
 local CACHE_KEY_LENGTH = 16
 
-function M.get_cache_dir()
+local function get_cache_dir()
   return vim.fn.stdpath("cache") .. "/" .. CACHE_DIR_NAME
 end
 
-function M.get_cache_key(repo_path)
+local function get_cache_key(repo_path)
   local hash = vim.fn.sha256(repo_path)
   return hash:sub(1, CACHE_KEY_LENGTH)
 end
 
-function M.get_cache_path(repo_path)
-  local cache_dir = M.get_cache_dir()
-  local cache_key = M.get_cache_key(repo_path)
+local function get_cache_path(repo_path)
+  local cache_dir = get_cache_dir()
+  local cache_key = get_cache_key(repo_path)
   return cache_dir .. "/" .. cache_key .. ".json"
 end
 
-function M.ensure_cache_dir()
-  local cache_dir = M.get_cache_dir()
+local function ensure_cache_dir()
+  local cache_dir = get_cache_dir()
   if vim.fn.isdirectory(cache_dir) == 0 then
     vim.fn.mkdir(cache_dir, "p")
   end
   return cache_dir
 end
 
--- Async read using vim.uv
 function M.read(repo_path, callback)
-  local cache_path = M.get_cache_path(repo_path)
+  local cache_path = get_cache_path(repo_path)
 
   vim.uv.fs_open(cache_path, "r", 438, function(err, fd)
     if err or not fd then
@@ -82,11 +81,10 @@ function M.read(repo_path, callback)
   end)
 end
 
--- Async write using vim.uv
 function M.write(repo_path, data, callback)
-  M.ensure_cache_dir()
+  ensure_cache_dir()
 
-  local cache_path = M.get_cache_path(repo_path)
+  local cache_path = get_cache_path(repo_path)
 
   local cache_data = vim.tbl_extend("force", data, {
     version = CACHE_VERSION,
@@ -124,7 +122,6 @@ function M.write(repo_path, data, callback)
   end)
 end
 
--- Async check if cache is fresh
 function M.is_fresh(repo_path, frequency_minutes, callback)
   M.read(repo_path, function(cache_data)
     if not cache_data or not cache_data.last_check_time then
@@ -140,7 +137,6 @@ function M.is_fresh(repo_path, frequency_minutes, callback)
   end)
 end
 
--- Async update cache after check
 function M.update_after_check(repo_path, state, callback)
   local cache_data = {
     last_check_time = os.time(),
