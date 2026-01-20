@@ -14,7 +14,11 @@ local M = {}
 M.status = Status
 
 local config = {}
-local state = Status.state -- Local reference for DRY code
+
+function M.get_config()
+  return config
+end
+local state = Status.state
 
 local function render_callback(mode)
   if mode == "loading" then
@@ -36,7 +40,6 @@ function M.open()
 
   Window.create_window(config)
 
-  -- Setup keymaps with callbacks
   Window.setup_keymaps(config, {
     close = M.close,
     update = function()
@@ -77,28 +80,41 @@ function M.refresh()
 end
 
 function M.check_updates()
-  local status = Git.get_repo_status(config, config.repo_path)
+  -- First validate the git repository (async, with caching)
+  Git.validate_git_repository(config.repo_path, function(is_valid, validation_err)
+    if not is_valid then
+      vim.notify(
+        "Invalid git repository: " .. (validation_err or "unknown error"),
+        vim.log.levels.ERROR,
+        { title = config.notify.error.title }
+      )
+      return
+    end
 
-  if status.error then
-    vim.notify(config.notify.error.message, vim.log.levels.ERROR, { title = config.notify.error.title })
-    return
-  end
+    -- Now check for updates asynchronously
+    Git.get_repo_status(config, config.repo_path, function(status)
+      if status.error then
+        vim.notify(config.notify.error.message, vim.log.levels.ERROR, { title = config.notify.error.title })
+        return
+      end
 
-  state.current_branch = status.branch
-  state.ahead_count = status.ahead
-  state.behind_count = status.behind
-  state.needs_update = status.behind > 0
-  state.last_check_time = os.time()
+      state.current_branch = status.branch
+      state.ahead_count = status.ahead
+      state.behind_count = status.behind
+      state.needs_update = status.behind > 0
+      state.last_check_time = os.time()
 
-  Cache.update_after_check(config.repo_path, state)
-
-  if state.needs_update then
-    local message = Utils.generate_outdated_message(config, status)
-    vim.notify(message, vim.log.levels.WARN, { title = config.notify.outdated.title })
-  else
-    local message = Utils.generate_up_to_date_message(config, status)
-    vim.notify(message, vim.log.levels.INFO, { title = config.notify.up_to_date.title })
-  end
+      Cache.update_after_check(config.repo_path, state, function()
+        if state.needs_update then
+          local message = Utils.generate_outdated_message(config, status)
+          vim.notify(message, vim.log.levels.WARN, { title = config.notify.outdated.title })
+        else
+          local message = Utils.generate_up_to_date_message(config, status)
+          vim.notify(message, vim.log.levels.INFO, { title = config.notify.up_to_date.title })
+        end
+      end)
+    end)
+  end)
 end
 
 function M.start_periodic_check()
@@ -116,9 +132,25 @@ local function load_debug_module()
   return debug
 end
 
-function M.health_check()
-  local Health = require("updater.health")
-  Health.health_check(config)
+local function setup_user_commands()
+  vim.api.nvim_create_user_command("UpdaterOpen", M.open, { desc = "Open Updater" })
+  vim.api.nvim_create_user_command("UpdaterCheck", M.check_updates, { desc = "Check for updates" })
+  vim.api.nvim_create_user_command(
+    "UpdaterStartChecking",
+    M.start_periodic_check,
+    { desc = "Start periodic update checking" }
+  )
+  vim.api.nvim_create_user_command(
+    "UpdaterStopChecking",
+    M.stop_periodic_check,
+    { desc = "Stop periodic update checking" }
+  )
+
+  vim.api.nvim_create_user_command("UpdaterDebugToggle", function()
+    local debug = load_debug_module()
+    debug.register_commands()
+    debug.toggle_debug_mode()
+  end, { desc = "Toggle Updater debug mode" })
 end
 
 function M.setup(opts)
@@ -136,26 +168,7 @@ function M.setup(opts)
   config = setup_config
 
   vim.keymap.set("n", config.keymap.open, M.open, { noremap = true, silent = true, desc = "Open Updater" })
-
-  vim.api.nvim_create_user_command("UpdaterOpen", M.open, { desc = "Open Updater" })
-  vim.api.nvim_create_user_command("UpdaterCheck", M.check_updates, { desc = "Check for updates" })
-  vim.api.nvim_create_user_command(
-    "UpdaterStartChecking",
-    M.start_periodic_check,
-    { desc = "Start periodic update checking" }
-  )
-  vim.api.nvim_create_user_command(
-    "UpdaterStopChecking",
-    M.stop_periodic_check,
-    { desc = "Stop periodic update checking" }
-  )
-  vim.api.nvim_create_user_command("UpdaterHealth", M.health_check, { desc = "Run Updater health check" })
-
-  vim.api.nvim_create_user_command("UpdaterDebugToggle", function()
-    local debug = load_debug_module()
-    debug.register_commands()
-    debug.toggle_debug_mode()
-  end, { desc = "Toggle Updater debug mode" })
+  setup_user_commands()
 
   Periodic.setup_startup_check(config, M.check_updates)
   Periodic.setup_periodic_check(config)

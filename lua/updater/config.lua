@@ -1,5 +1,3 @@
-local Constants = require("updater.constants")
-local Git = require("updater.git")
 local M = {}
 
 local function validate_repo_path(cfg)
@@ -209,11 +207,6 @@ function M.setup_config(opts)
   local sanitized_path, sanitize_err = sanitize_repo_path(merged_config.repo_path)
   if not sanitized_path then
     return nil, "updater.nvim: " .. sanitize_err
-  end
-
-  local is_git_repo, git_err = Git.validate_git_repository(sanitized_path)
-  if not is_git_repo then
-    return nil, "updater.nvim: " .. git_err
   end
 
   merged_config.repo_path = sanitized_path
