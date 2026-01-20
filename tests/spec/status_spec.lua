@@ -21,7 +21,11 @@ describe("status module", function()
     Status.state.commits_in_branch = {}
     Status.state.log_type = "local"
     Status.state.plugin_updates = {}
+    Status.state.plugins_behind = {}
+    Status.state.plugins_ahead = {}
     Status.state.has_plugin_updates = false
+    Status.state.has_plugins_behind = false
+    Status.state.has_plugins_ahead = false
     Status.state.recently_updated_dotfiles = false
     Status.state.recently_updated_plugins = false
     Status.state.loading_spinner_timer = nil
@@ -139,89 +143,97 @@ describe("status module", function()
   describe("get_update_count", function()
     it("should return 0 when no updates", function()
       Status.state.needs_update = false
-      Status.state.has_plugin_updates = false
+      Status.state.has_plugins_behind = false
       assert.equals(0, Status.get_update_count())
     end)
 
     it("should return behind_count when dotfile updates available", function()
       Status.state.needs_update = true
       Status.state.behind_count = 3
-      Status.state.has_plugin_updates = false
+      Status.state.has_plugins_behind = false
       assert.equals(3, Status.get_update_count())
     end)
 
-    it("should return plugin count when plugin updates available", function()
+    it("should return plugin count when plugins are behind", function()
       Status.state.needs_update = false
-      Status.state.has_plugin_updates = true
-      Status.state.plugin_updates = { { name = "a" }, { name = "b" } }
+      Status.state.has_plugins_behind = true
+      Status.state.plugins_behind = { { name = "a" }, { name = "b" } }
       assert.equals(2, Status.get_update_count())
     end)
 
     it("should return combined count when both updates available", function()
       Status.state.needs_update = true
       Status.state.behind_count = 3
-      Status.state.has_plugin_updates = true
-      Status.state.plugin_updates = { { name = "a" }, { name = "b" } }
+      Status.state.has_plugins_behind = true
+      Status.state.plugins_behind = { { name = "a" }, { name = "b" } }
       assert.equals(5, Status.get_update_count())
+    end)
+
+    it("should not count plugins ahead in update count", function()
+      Status.state.needs_update = false
+      Status.state.has_plugins_behind = false
+      Status.state.has_plugins_ahead = true
+      Status.state.plugins_ahead = { { name = "a" } }
+      assert.equals(0, Status.get_update_count())
     end)
   end)
 
   describe("get_update_text", function()
     it("should return empty string when no updates", function()
       Status.state.needs_update = false
-      Status.state.has_plugin_updates = false
+      Status.state.has_plugins_behind = false
       assert.equals("", Status.get_update_text())
     end)
 
     it("should return dotfile text in default format", function()
       Status.state.needs_update = true
       Status.state.behind_count = 1
-      Status.state.has_plugin_updates = false
+      Status.state.has_plugins_behind = false
       assert.equals("1 dotfile update", Status.get_update_text())
     end)
 
     it("should pluralize dotfiles correctly", function()
       Status.state.needs_update = true
       Status.state.behind_count = 3
-      Status.state.has_plugin_updates = false
+      Status.state.has_plugins_behind = false
       assert.equals("3 dotfiles updates", Status.get_update_text())
     end)
 
     it("should return plugin text in default format", function()
       Status.state.needs_update = false
-      Status.state.has_plugin_updates = true
-      Status.state.plugin_updates = { { name = "test" } }
+      Status.state.has_plugins_behind = true
+      Status.state.plugins_behind = { { name = "test" } }
       assert.equals("1 plugin update", Status.get_update_text())
     end)
 
     it("should pluralize plugins correctly", function()
       Status.state.needs_update = false
-      Status.state.has_plugin_updates = true
-      Status.state.plugin_updates = { { name = "a" }, { name = "b" } }
+      Status.state.has_plugins_behind = true
+      Status.state.plugins_behind = { { name = "a" }, { name = "b" } }
       assert.equals("2 plugins updates", Status.get_update_text())
     end)
 
     it("should combine dotfiles and plugins", function()
       Status.state.needs_update = true
       Status.state.behind_count = 2
-      Status.state.has_plugin_updates = true
-      Status.state.plugin_updates = { { name = "a" } }
+      Status.state.has_plugins_behind = true
+      Status.state.plugins_behind = { { name = "a" } }
       assert.equals("2 dotfiles, 1 plugin updates", Status.get_update_text())
     end)
 
     it("should return short format", function()
       Status.state.needs_update = true
       Status.state.behind_count = 2
-      Status.state.has_plugin_updates = true
-      Status.state.plugin_updates = { { name = "a" } }
+      Status.state.has_plugins_behind = true
+      Status.state.plugins_behind = { { name = "a" } }
       assert.equals("2d 1p", Status.get_update_text("short"))
     end)
 
     it("should return icon format", function()
       Status.state.needs_update = true
       Status.state.behind_count = 2
-      Status.state.has_plugin_updates = true
-      Status.state.plugin_updates = { { name = "a" } }
+      Status.state.has_plugins_behind = true
+      Status.state.plugins_behind = { { name = "a" } }
       local text = Status.get_update_text("icon")
       assert.is_truthy(text:match("2"))
       assert.is_truthy(text:match("1"))

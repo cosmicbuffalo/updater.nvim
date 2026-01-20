@@ -63,10 +63,11 @@ function M.render(config)
   vim.api.nvim_buf_set_option(Status.state.buffer, "modifiable", true)
   vim.api.nvim_buf_set_lines(Status.state.buffer, 0, -1, false, {})
 
-  local header = UI.generate_header(Status.state, config)
+  local header, status_messages, status_lines_start = UI.generate_header(Status.state, config)
   local keybindings, keybind_data = UI.generate_keybindings(Status.state, config)
   local remote_commit_info = UI.generate_remote_commits_section(Status.state, config)
   local plugin_update_info = UI.generate_plugin_updates_section(Status.state)
+  local plugins_ahead_info = UI.generate_plugins_ahead_section(Status.state)
   local restart_reminder = UI.generate_restart_reminder_section(Status.state)
 
   -- Only show commit log if it's not redundant with remote commits section
@@ -80,7 +81,6 @@ function M.render(config)
   for _, line in ipairs(header) do
     table.insert(lines, line)
   end
-  local status_line = #lines - 2
 
   local keybindings_start = #lines + 1
   for _, line in ipairs(keybindings) do
@@ -103,12 +103,24 @@ function M.render(config)
     table.insert(lines, line)
   end
 
+  for _, line in ipairs(plugins_ahead_info) do
+    table.insert(lines, line)
+  end
+
   for _, line in ipairs(commit_log) do
     table.insert(lines, line)
   end
 
   vim.api.nvim_buf_set_lines(Status.state.buffer, 0, -1, false, lines)
-  UI.apply_highlighting(Status.state, config, status_line, keybindings_start, keybind_data, restart_reminder_line)
+  UI.apply_highlighting(
+    Status.state,
+    config,
+    status_messages,
+    status_lines_start,
+    keybindings_start,
+    keybind_data,
+    restart_reminder_line
+  )
 
   vim.api.nvim_buf_set_option(Status.state.buffer, "modifiable", false)
   vim.api.nvim_win_set_height(Status.state.window, math.min(#lines + 1, Constants.MAX_WINDOW_HEIGHT_LINES))

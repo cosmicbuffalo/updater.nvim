@@ -14,7 +14,11 @@ describe("ui module", function()
       is_refreshing = false,
       is_installing_plugins = false,
       has_plugin_updates = false,
+      has_plugins_behind = false,
+      has_plugins_ahead = false,
       plugin_updates = {},
+      plugins_behind = {},
+      plugins_ahead = {},
       remote_commits = {},
       commits = {},
       commits_in_branch = {},
@@ -178,8 +182,8 @@ describe("ui module", function()
       -- On main branch with updates available
       test_state.current_branch = "main"
       test_state.behind_count = 1
-      test_state.has_plugin_updates = true
-      test_state.plugin_updates = { { name = "test" } }
+      test_state.has_plugins_behind = true
+      test_state.plugins_behind = { { name = "test" } }
 
       local keybindings, keybind_data = UI.generate_keybindings(test_state, test_config)
 
@@ -192,8 +196,8 @@ describe("ui module", function()
     it("should include all keymaps on main branch with updates", function()
       test_state.current_branch = "main"
       test_state.behind_count = 1
-      test_state.has_plugin_updates = true
-      test_state.plugin_updates = { { name = "test" } }
+      test_state.has_plugins_behind = true
+      test_state.plugins_behind = { { name = "test" } }
 
       local keybindings, _ = UI.generate_keybindings(test_state, test_config)
       local text = table.concat(keybindings, "\n")
@@ -208,8 +212,8 @@ describe("ui module", function()
     it("should hide U keybind on non-main branch", function()
       test_state.current_branch = "feature-branch"
       test_state.behind_count = 1
-      test_state.has_plugin_updates = true
-      test_state.plugin_updates = { { name = "test" } }
+      test_state.has_plugins_behind = true
+      test_state.plugins_behind = { { name = "test" } }
 
       local keybindings, _ = UI.generate_keybindings(test_state, test_config)
       local text = table.concat(keybindings, "\n")
@@ -221,8 +225,8 @@ describe("ui module", function()
     it("should hide u keybind when behind_count is 0", function()
       test_state.current_branch = "main"
       test_state.behind_count = 0
-      test_state.has_plugin_updates = false
-      test_state.plugin_updates = {}
+      test_state.has_plugins_behind = false
+      test_state.has_plugins_ahead = false
 
       local keybindings, keybind_data = UI.generate_keybindings(test_state, test_config)
       local text = table.concat(keybindings, "\n")
@@ -235,23 +239,24 @@ describe("ui module", function()
       assert.equals(2, #keybind_data) -- Only r and q
     end)
 
-    it("should hide i keybind when no plugin updates", function()
+    it("should hide i keybind when no plugin differences", function()
       test_state.current_branch = "main"
       test_state.behind_count = 1
-      test_state.has_plugin_updates = false
-      test_state.plugin_updates = {}
+      test_state.has_plugins_behind = false
+      test_state.has_plugins_ahead = false
 
       local keybindings, _ = UI.generate_keybindings(test_state, test_config)
       local text = table.concat(keybindings, "\n")
 
       assert.is_falsy(text:match("Install plugin updates"))
+      assert.is_falsy(text:match("Update/Downgrade plugins"))
     end)
 
     it("should always show r and q keybinds", function()
       test_state.current_branch = "feature-branch"
       test_state.behind_count = 0
-      test_state.has_plugin_updates = false
-      test_state.plugin_updates = {}
+      test_state.has_plugins_behind = false
+      test_state.has_plugins_ahead = false
 
       local keybindings, keybind_data = UI.generate_keybindings(test_state, test_config)
       local text = table.concat(keybindings, "\n")
@@ -259,6 +264,48 @@ describe("ui module", function()
       assert.is_truthy(text:match("r"))
       assert.is_truthy(text:match("q"))
       assert.equals(2, #keybind_data)
+    end)
+
+    it("should show 'Update/Downgrade plugins' when plugins are ahead", function()
+      test_state.current_branch = "main"
+      test_state.behind_count = 0
+      test_state.has_plugins_behind = false
+      test_state.has_plugins_ahead = true
+      test_state.plugins_ahead = { { name = "test-ahead" } }
+
+      local keybindings, _ = UI.generate_keybindings(test_state, test_config)
+      local text = table.concat(keybindings, "\n")
+
+      assert.is_truthy(text:match("Update/Downgrade plugins"))
+    end)
+
+    it("should show 'Install plugin updates' when only plugins behind", function()
+      test_state.current_branch = "main"
+      test_state.behind_count = 0
+      test_state.has_plugins_behind = true
+      test_state.has_plugins_ahead = false
+      test_state.plugins_behind = { { name = "test-behind" } }
+
+      local keybindings, _ = UI.generate_keybindings(test_state, test_config)
+      local text = table.concat(keybindings, "\n")
+
+      assert.is_truthy(text:match("Install plugin updates"))
+      assert.is_falsy(text:match("Update/Downgrade"))
+    end)
+
+    it("should show i keybind on non-main branch when plugins have differences", function()
+      test_state.current_branch = "feature-branch"
+      test_state.behind_count = 0
+      test_state.has_plugins_behind = true
+      test_state.plugins_behind = { { name = "test" } }
+
+      local keybindings, keybind_data = UI.generate_keybindings(test_state, test_config)
+      local text = table.concat(keybindings, "\n")
+
+      -- Should show i keybind even on non-main branch
+      assert.is_truthy(text:match("i %- Install plugin updates"))
+      -- Should have i, r, q in keybind_data (no U or u since behind_count is 0)
+      assert.equals(3, #keybind_data)
     end)
   end)
 
@@ -288,16 +335,16 @@ describe("ui module", function()
   end)
 
   describe("generate_plugin_updates_section", function()
-    it("should return empty table when no plugin updates", function()
-      test_state.plugin_updates = {}
+    it("should return empty table when no plugins behind", function()
+      test_state.plugins_behind = {}
       local section = UI.generate_plugin_updates_section(test_state)
 
       assert.is_table(section)
       assert.equals(0, #section)
     end)
 
-    it("should include plugin info when updates available", function()
-      test_state.plugin_updates = {
+    it("should include plugin info when plugins are behind", function()
+      test_state.plugins_behind = {
         { name = "test-plugin", installed_commit = "old123", lockfile_commit = "new456", branch = "main" },
       }
       local section = UI.generate_plugin_updates_section(test_state)
@@ -309,6 +356,43 @@ describe("ui module", function()
       assert.is_truthy(text:match("test%-plugin"))
       assert.is_truthy(text:match("old123"))
       assert.is_truthy(text:match("new456"))
+    end)
+  end)
+
+  describe("generate_plugins_ahead_section", function()
+    it("should return empty table when no plugins ahead", function()
+      test_state.plugins_ahead = {}
+      local section = UI.generate_plugins_ahead_section(test_state)
+
+      assert.is_table(section)
+      assert.equals(0, #section)
+    end)
+
+    it("should include plugin info when plugins are ahead of lockfile", function()
+      test_state.plugins_ahead = {
+        { name = "telescope.nvim", installed_commit = "new789", lockfile_commit = "old456", branch = "main" },
+      }
+      local section = UI.generate_plugins_ahead_section(test_state)
+
+      assert.is_table(section)
+      assert.is_true(#section > 0)
+
+      local text = table.concat(section, "\n")
+      assert.is_truthy(text:match("telescope%.nvim"))
+      assert.is_truthy(text:match("old456"))
+      assert.is_truthy(text:match("new789"))
+      assert.is_truthy(text:match("Plugins ahead of lockfile"))
+    end)
+
+    it("should show reversed arrow for ahead plugins", function()
+      test_state.plugins_ahead = {
+        { name = "plugin", installed_commit = "new123", lockfile_commit = "old456", branch = "main" },
+      }
+      local section = UI.generate_plugins_ahead_section(test_state)
+      local text = table.concat(section, "\n")
+
+      -- The format should be: lockfile <- installed (reversed arrow)
+      assert.is_truthy(text:match("old456 ← new123"))
     end)
   end)
 

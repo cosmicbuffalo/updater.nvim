@@ -61,37 +61,84 @@ local function generate_branch_status(state, config)
   return lines
 end
 
-local function generate_status_message(state, config)
+-- Returns a table of { text = "...", hl_group = "..." } for status lines
+local function generate_status_messages(state, config)
   local is_on_main = state.current_branch == config.main_branch
+  local messages = {}
 
   if state.is_updating then
-    return "  " .. M.get_loading_spinner(state) .. " Updating dotfiles... Please wait."
+    table.insert(messages, {
+      text = "  " .. M.get_loading_spinner(state) .. " Updating dotfiles... Please wait.",
+      hl_group = "WarningMsg",
+    })
+    return messages
   elseif state.is_installing_plugins then
-    return "  " .. M.get_loading_spinner(state) .. " Installing plugin updates... Please wait."
+    table.insert(messages, {
+      text = "  " .. M.get_loading_spinner(state) .. " Installing plugin updates... Please wait.",
+      hl_group = "WarningMsg",
+    })
+    return messages
   elseif state.is_refreshing then
     local check_msg = is_on_main and "Checking for updates..." or "Seeing what's new on main..."
     if state.is_initial_load then
-      return "  " .. M.get_loading_spinner(state) .. " " .. check_msg .. " Please wait."
+      table.insert(messages, {
+        text = "  " .. M.get_loading_spinner(state) .. " " .. check_msg .. " Please wait.",
+        hl_group = "WarningMsg",
+      })
     else
       -- Background refresh with cached data - show subtle indicator
-      return "  " .. M.get_loading_spinner(state) .. " " .. check_msg .. " Please wait. (showing cached data)"
+      table.insert(messages, {
+        text = "  " .. M.get_loading_spinner(state) .. " " .. check_msg .. " Please wait. (showing cached data)",
+        hl_group = "WarningMsg",
+      })
     end
-  elseif state.behind_count > 0 or state.has_plugin_updates then
-    local messages = {}
-    if state.behind_count > 0 then
-      table.insert(messages, "Dotfiles update")
+    return messages
+  end
+
+  -- Determine what updates are available
+  local has_dotfile_updates = state.behind_count > 0
+  local has_plugins_behind = state.has_plugins_behind or false
+  local has_plugins_ahead = state.has_plugins_ahead or false
+  local plugins_behind_count = state.plugins_behind and #state.plugins_behind or 0
+  local plugins_ahead_count = state.plugins_ahead and #state.plugins_ahead or 0
+
+  -- Build the green "updates available" message (only for actual updates)
+  if has_dotfile_updates or has_plugins_behind then
+    local update_parts = {}
+    if has_dotfile_updates then
+      table.insert(update_parts, "Dotfiles update")
     end
-    if state.has_plugin_updates then
-      table.insert(messages, tostring(#state.plugin_updates) .. " plugin update(s)")
+    if has_plugins_behind then
+      table.insert(update_parts, tostring(plugins_behind_count) .. " plugin update(s)")
     end
-    return "  " .. table.concat(messages, " and ") .. " available!"
+    table.insert(messages, {
+      text = "  " .. table.concat(update_parts, " and ") .. " available!",
+      hl_group = "String",
+    })
   else
+    -- No actual updates - show up to date message
     if is_on_main then
-      return "  Your dotfiles and plugins are up to date!"
+      table.insert(messages, {
+        text = "  Your dotfiles and plugins are up to date!",
+        hl_group = "String",
+      })
     else
-      return "  Your current branch is up to date with the latest commits on main"
+      table.insert(messages, {
+        text = "  Your current branch is up to date with the latest commits on main",
+        hl_group = "String",
+      })
     end
   end
+
+  -- Add yellow warning for plugins ahead (downgrades available)
+  if has_plugins_ahead then
+    table.insert(messages, {
+      text = "  " .. tostring(plugins_ahead_count) .. " plugin(s) ahead of lockfile (can be downgraded)",
+      hl_group = "WarningMsg",
+    })
+  end
+
+  return messages
 end
 
 function M.generate_header(state, config)
@@ -105,16 +152,22 @@ function M.generate_header(state, config)
 
   table.insert(header, "")
 
-  -- Add status message
-  table.insert(header, generate_status_message(state, config))
+  -- Add status messages (may be multiple lines with different highlighting)
+  local status_messages = generate_status_messages(state, config)
+  local status_lines_start = #header -- 0-indexed line where status starts
+  for _, msg in ipairs(status_messages) do
+    table.insert(header, msg.text)
+  end
   table.insert(header, "")
 
-  return header
+  return header, status_messages, status_lines_start
 end
 
 function M.generate_keybindings(state, config)
   local is_on_main = state.current_branch == config.main_branch
-  local has_any_updates = state.behind_count > 0 or (state.has_plugin_updates and #state.plugin_updates > 0)
+  local has_plugins_behind = state.has_plugins_behind or false
+  local has_plugins_ahead = state.has_plugins_ahead or false
+  local has_any_updates = state.behind_count > 0 or has_plugins_behind or has_plugins_ahead
   local lines = { "  Keybindings:" }
   local keybind_data = {} -- Track keybinds for highlighting
 
@@ -131,9 +184,11 @@ function M.generate_keybindings(state, config)
     table.insert(keybind_data, { key = config.keymap.update })
   end
 
-  -- i - Install plugins: Only show if plugin updates available
-  if state.has_plugin_updates and #state.plugin_updates > 0 then
-    table.insert(lines, "    " .. config.keymap.install_plugins .. " - Install plugin updates (:Lazy restore)")
+  -- i - Install plugins: Show if any plugin differences exist (behind or ahead)
+  if has_plugins_behind or has_plugins_ahead then
+    local label = has_plugins_ahead and "Update/Downgrade plugins (:Lazy restore)"
+      or "Install plugin updates (:Lazy restore)"
+    table.insert(lines, "    " .. config.keymap.install_plugins .. " - " .. label)
     table.insert(keybind_data, { key = config.keymap.install_plugins })
   end
 
@@ -175,11 +230,13 @@ end
 
 function M.generate_plugin_updates_section(state)
   local plugin_update_info = {}
-  if #state.plugin_updates > 0 then
+  -- Only show plugins that are behind (need updates)
+  local plugins_behind = state.plugins_behind or {}
+  if #plugins_behind > 0 then
     table.insert(plugin_update_info, "  Plugin updates available:")
     table.insert(plugin_update_info, "  " .. Constants.SEPARATOR_LINE)
 
-    for _, plugin in ipairs(state.plugin_updates) do
+    for _, plugin in ipairs(plugins_behind) do
       local line = "  " .. plugin.name .. " (" .. plugin.installed_commit .. " → " .. plugin.lockfile_commit .. ")"
 
       table.insert(plugin_update_info, line)
@@ -187,6 +244,23 @@ function M.generate_plugin_updates_section(state)
     table.insert(plugin_update_info, "  ")
   end
   return plugin_update_info
+end
+
+function M.generate_plugins_ahead_section(state)
+  local plugins_ahead_info = {}
+  local plugins_ahead = state.plugins_ahead or {}
+  if #plugins_ahead > 0 then
+    table.insert(plugins_ahead_info, "  Plugins ahead of lockfile:")
+    table.insert(plugins_ahead_info, "  " .. Constants.SEPARATOR_LINE)
+
+    for _, plugin in ipairs(plugins_ahead) do
+      -- Use reversed arrow to indicate lockfile is behind installed
+      local line = "  " .. plugin.name .. " (" .. plugin.lockfile_commit .. " ← " .. plugin.installed_commit .. ")"
+      table.insert(plugins_ahead_info, line)
+    end
+    table.insert(plugins_ahead_info, "  ")
+  end
+  return plugins_ahead_info
 end
 
 function M.generate_restart_reminder_section(state)
@@ -291,15 +365,16 @@ local function highlight_header(buffer, ns_id)
   add_highlight(buffer, ns_id, "Directory", 1, 2, -1)
 end
 
-local function highlight_status(buffer, ns_id, state, status_line)
-  local status_hl_group = (state.is_updating or state.is_refreshing or state.is_installing_plugins) and "WarningMsg"
-    or "String"
-  add_highlight(buffer, ns_id, status_hl_group, status_line, 2, -1)
+local function highlight_status(buffer, ns_id, status_messages, status_lines_start)
+  for i, msg in ipairs(status_messages) do
+    local line_num = status_lines_start + i - 1
+    add_highlight(buffer, ns_id, msg.hl_group, line_num, 2, -1)
+  end
 end
 
 local function highlight_keybindings(buffer, ns_id, keybindings_start, keybind_data)
   for i, data in ipairs(keybind_data) do
-    local line_num = keybindings_start + i -- +1 for "Keybindings:" header, 0-indexed = just +i
+    local line_num = keybindings_start + i - 1
     add_highlight(buffer, ns_id, "Statement", line_num, 4, 4 + #data.key)
   end
 end
@@ -335,7 +410,8 @@ local function highlight_remote_commits(buffer, ns_id, state, config)
 end
 
 local function highlight_plugin_updates(buffer, ns_id, state)
-  if #state.plugin_updates > 0 then
+  local plugins_behind = state.plugins_behind or {}
+  if #plugins_behind > 0 then
     local title_pattern = "Plugin updates available:"
     local section_line = find_section_line(buffer, vim.pesc(title_pattern))
 
@@ -345,9 +421,9 @@ local function highlight_plugin_updates(buffer, ns_id, state)
 
       -- Highlight plugin names and commits after title and separator
       local plugin_start_line = section_line + 2
-      for i = 1, #state.plugin_updates do
+      for i = 1, #plugins_behind do
         local line_num = plugin_start_line + i - 1
-        local plugin = state.plugin_updates[i]
+        local plugin = plugins_behind[i]
         local name_end = 2 + #plugin.name
         local installed_start = name_end + 2
         local installed_end = installed_start + #plugin.installed_commit
@@ -355,8 +431,38 @@ local function highlight_plugin_updates(buffer, ns_id, state)
         local lockfile_end = lockfile_start + #plugin.lockfile_commit
 
         add_highlight(buffer, ns_id, "Directory", line_num, 2, name_end) -- Plugin name
-        add_highlight(buffer, ns_id, "Constant", line_num, installed_start, installed_end) -- Installed commit
-        add_highlight(buffer, ns_id, "Directory", line_num, lockfile_start, lockfile_end) -- Lockfile commit
+        add_highlight(buffer, ns_id, "Constant", line_num, installed_start, installed_end) -- Installed commit (old)
+        add_highlight(buffer, ns_id, "String", line_num, lockfile_start, lockfile_end) -- Lockfile commit (new)
+      end
+    end
+  end
+end
+
+local function highlight_plugins_ahead(buffer, ns_id, state)
+  local plugins_ahead = state.plugins_ahead or {}
+  if #plugins_ahead > 0 then
+    local title_pattern = "Plugins ahead of lockfile:"
+    local section_line = find_section_line(buffer, vim.pesc(title_pattern))
+
+    if section_line then
+      -- Highlight section title
+      add_highlight(buffer, ns_id, "Title", section_line, 2, -1)
+
+      -- Highlight plugin names and commits after title and separator
+      -- Format: "plugin-name (lockfile <- installed)"
+      local plugin_start_line = section_line + 2
+      for i = 1, #plugins_ahead do
+        local line_num = plugin_start_line + i - 1
+        local plugin = plugins_ahead[i]
+        local name_end = 2 + #plugin.name
+        local lockfile_start = name_end + 2
+        local lockfile_end = lockfile_start + #plugin.lockfile_commit
+        local installed_start = lockfile_end + 5 -- " ← " is 5 bytes (3 char arrow + 2 spaces)
+        local installed_end = installed_start + #plugin.installed_commit
+
+        add_highlight(buffer, ns_id, "WarningMsg", line_num, 2, name_end) -- Plugin name (yellow to match downgrade warning)
+        add_highlight(buffer, ns_id, "DiagnosticWarn", line_num, lockfile_start, lockfile_end) -- Lockfile commit (old)
+        add_highlight(buffer, ns_id, "String", line_num, installed_start, installed_end) -- Installed commit (new)
       end
     end
   end
@@ -407,16 +513,25 @@ local function highlight_commit_log(buffer, ns_id, state, config)
   end
 end
 
-function M.apply_highlighting(state, config, status_line, keybindings_start, keybind_data, restart_reminder_line)
+function M.apply_highlighting(
+  state,
+  config,
+  status_messages,
+  status_lines_start,
+  keybindings_start,
+  keybind_data,
+  restart_reminder_line
+)
   local ns_id = vim.api.nvim_create_namespace("DotfilesUpdater")
   vim.api.nvim_buf_clear_namespace(state.buffer, ns_id, 0, -1)
 
   highlight_header(state.buffer, ns_id)
-  highlight_status(state.buffer, ns_id, state, status_line)
+  highlight_status(state.buffer, ns_id, status_messages, status_lines_start)
   highlight_keybindings(state.buffer, ns_id, keybindings_start, keybind_data)
   highlight_restart_reminder(state.buffer, ns_id, state, restart_reminder_line)
   highlight_remote_commits(state.buffer, ns_id, state, config)
   highlight_plugin_updates(state.buffer, ns_id, state)
+  highlight_plugins_ahead(state.buffer, ns_id, state)
   highlight_commit_log(state.buffer, ns_id, state, config)
 end
 

@@ -1,6 +1,5 @@
 local M = {}
 
--- Private state object
 local state = {
   -- Window/UI state
   is_open = false,
@@ -29,7 +28,11 @@ local state = {
 
   -- Plugin data
   plugin_updates = {},
+  plugins_behind = {},
+  plugins_ahead = {},
   has_plugin_updates = false,
+  has_plugins_behind = false,
+  has_plugins_ahead = false,
 
   -- Restart reminder state
   recently_updated_dotfiles = false,
@@ -48,7 +51,6 @@ local state = {
   debug_simulate_plugins = 0,
 }
 
--- Utility functions for timer management
 function M.stop_periodic_timer()
   if state.periodic_timer then
     state.periodic_timer:stop()
@@ -57,20 +59,18 @@ function M.stop_periodic_timer()
   end
 end
 
--- Utility functions
 function M.has_cached_data()
   return state.last_check_time ~= nil
 end
 
 function M.has_updates()
-  return state.needs_update or state.has_plugin_updates
+  return state.needs_update or state.has_plugin_updates or state.has_plugins_behind or state.has_plugins_ahead
 end
 
 function M.has_recent_updates()
   return state.recently_updated_dotfiles or state.recently_updated_plugins
 end
 
--- High-level API functions for external use
 function M.clear_recent_updates()
   state.recently_updated_dotfiles = false
   state.recently_updated_plugins = false
@@ -83,7 +83,11 @@ function M.get()
     behind_count = state.behind_count,
     ahead_count = state.ahead_count,
     has_plugin_updates = state.has_plugin_updates,
+    has_plugins_behind = state.has_plugins_behind,
+    has_plugins_ahead = state.has_plugins_ahead,
     plugin_update_count = #state.plugin_updates,
+    plugins_behind_count = #state.plugins_behind,
+    plugins_ahead_count = #state.plugins_ahead,
     current_branch = state.current_branch,
     last_check_time = state.last_check_time,
     is_updating = state.is_updating,
@@ -97,8 +101,9 @@ function M.get_update_count()
   if state.needs_update then
     count = count + state.behind_count
   end
-  if state.has_plugin_updates then
-    count = count + #state.plugin_updates
+  -- Only count plugins that are behind (need updates), not those ahead
+  if state.has_plugins_behind then
+    count = count + #state.plugins_behind
   end
   return count
 end
@@ -122,8 +127,9 @@ function M.get_update_text(format)
     end
   end
 
-  if state.has_plugin_updates then
-    local plugin_count = #state.plugin_updates
+  -- Only show count for plugins that are behind (need updates)
+  if state.has_plugins_behind then
+    local plugin_count = #state.plugins_behind
     if format == "short" then
       table.insert(parts, plugin_count .. "p") -- p for plugins
     elseif format == "icon" then

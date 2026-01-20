@@ -22,79 +22,6 @@ describe("plugins module", function()
     end)
   end)
 
-  describe("get_plugin_updates", function()
-    it("should return empty table when config is nil", function()
-      local captured = _G.test_helpers.capture_notifications()
-      local updates = Plugins.get_plugin_updates(nil)
-      captured.restore()
-
-      assert.is_table(updates)
-      assert.equals(0, #updates)
-    end)
-
-    it("should return empty table when repo_path is empty", function()
-      local captured = _G.test_helpers.capture_notifications()
-      local updates = Plugins.get_plugin_updates({ repo_path = "" })
-      captured.restore()
-
-      assert.is_table(updates)
-      assert.equals(0, #updates)
-    end)
-
-    it("should return empty table when lockfile does not exist", function()
-      local updates = Plugins.get_plugin_updates(test_config)
-
-      assert.is_table(updates)
-      assert.equals(0, #updates)
-    end)
-
-    it("should return empty table for empty lockfile", function()
-      -- Create empty lockfile
-      local lockfile_path = test_dir .. "/lazy-lock.json"
-      local file = io.open(lockfile_path, "w")
-      file:write("")
-      file:close()
-
-      local updates = Plugins.get_plugin_updates(test_config)
-
-      assert.is_table(updates)
-      assert.equals(0, #updates)
-    end)
-
-    it("should handle malformed JSON gracefully", function()
-      local lockfile_path = test_dir .. "/lazy-lock.json"
-      local file = io.open(lockfile_path, "w")
-      file:write("this is not valid json")
-      file:close()
-
-      local captured = _G.test_helpers.capture_notifications()
-      local updates = Plugins.get_plugin_updates(test_config)
-      captured.restore()
-
-      assert.is_table(updates)
-      assert.equals(0, #updates)
-      -- Should have warned about malformed JSON
-      assert.is_true(#captured.notifications >= 1)
-    end)
-
-    it("should handle valid lockfile with no updates needed", function()
-      local lockfile_path = test_dir .. "/lazy-lock.json"
-      local file = io.open(lockfile_path, "w")
-      file:write(vim.json.encode({
-        ["test-plugin"] = {
-          branch = "main",
-          commit = "abc123def456789",
-        },
-      }))
-      file:close()
-
-      local updates = Plugins.get_plugin_updates(test_config)
-
-      -- Since the mock doesn't return installed commits, no updates detected
-      assert.is_table(updates)
-    end)
-  end)
-
   describe("get_installed_plugin_commit", function()
     it("should return nil for non-existent plugin", function()
       local commit = Plugins.get_installed_plugin_commit("non-existent-plugin")
@@ -123,6 +50,69 @@ describe("plugins module", function()
 
       assert.equals(1, #captured.notifications)
       assert.equals(vim.log.levels.ERROR, captured.notifications[1].level)
+    end)
+  end)
+
+  describe("get_plugin_updates_async", function()
+    it("should call callback with empty result when config is nil", function()
+      local result
+      local captured = _G.test_helpers.capture_notifications()
+
+      Plugins.get_plugin_updates_async(nil, function(r)
+        result = r
+      end)
+
+      captured.restore()
+
+      assert.is_table(result)
+      assert.is_table(result.all_updates)
+      assert.is_table(result.plugins_behind)
+      assert.is_table(result.plugins_ahead)
+      assert.equals(0, #result.all_updates)
+      assert.equals(0, #result.plugins_behind)
+      assert.equals(0, #result.plugins_ahead)
+    end)
+
+    it("should call callback with empty result when repo_path is empty", function()
+      local result
+      local captured = _G.test_helpers.capture_notifications()
+
+      Plugins.get_plugin_updates_async({ repo_path = "" }, function(r)
+        result = r
+      end)
+
+      captured.restore()
+
+      assert.is_table(result)
+      assert.equals(0, #result.all_updates)
+      assert.equals(0, #result.plugins_behind)
+      assert.equals(0, #result.plugins_ahead)
+    end)
+
+    it("should call callback with empty result when lockfile does not exist", function()
+      local result
+
+      Plugins.get_plugin_updates_async(test_config, function(r)
+        result = r
+      end)
+
+      assert.is_table(result)
+      assert.equals(0, #result.all_updates)
+      assert.equals(0, #result.plugins_behind)
+      assert.equals(0, #result.plugins_ahead)
+    end)
+
+    it("should return result with proper structure", function()
+      local result
+
+      Plugins.get_plugin_updates_async(test_config, function(r)
+        result = r
+      end)
+
+      assert.is_table(result)
+      assert.is_not_nil(result.all_updates)
+      assert.is_not_nil(result.plugins_behind)
+      assert.is_not_nil(result.plugins_ahead)
     end)
   end)
 end)
