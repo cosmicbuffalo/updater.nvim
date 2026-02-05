@@ -6,7 +6,16 @@ local Constants = require("updater.constants")
 local Cache = require("updater.cache")
 local M = {}
 
+-- Skip periodic checks when pinned to a version
+local function should_skip_periodic_check()
+  return Status.is_pinned_to_version()
+end
+
 local function periodic_check(config)
+  -- Skip checks when pinned to a version
+  if should_skip_periodic_check() then
+    return
+  end
   Cache.is_fresh(config.repo_path, config.periodic_check.frequency_minutes, function(is_fresh, _)
     if is_fresh then
       return

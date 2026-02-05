@@ -94,6 +94,26 @@ local function validate_excluded_filetypes(cfg)
   return errors
 end
 
+local function validate_versioned_releases_only(cfg)
+  local errors = {}
+  if cfg.versioned_releases_only ~= nil and type(cfg.versioned_releases_only) ~= "boolean" then
+    table.insert(errors, "versioned_releases_only must be a boolean")
+  end
+  return errors
+end
+
+local function validate_version_tag_pattern(cfg)
+  local errors = {}
+  if cfg.version_tag_pattern ~= nil then
+    if type(cfg.version_tag_pattern) ~= "string" then
+      table.insert(errors, "version_tag_pattern must be a string")
+    elseif cfg.version_tag_pattern == "" then
+      table.insert(errors, "version_tag_pattern cannot be empty")
+    end
+  end
+  return errors
+end
+
 local function validate_config(cfg)
   local errors = {}
 
@@ -106,6 +126,8 @@ local function validate_config(cfg)
     validate_main_branch,
     validate_git_options,
     validate_excluded_filetypes,
+    validate_versioned_releases_only,
+    validate_version_tag_pattern,
   }
 
   for _, validator in ipairs(validators) do
@@ -194,6 +216,8 @@ function M.setup_config(opts)
       frequency_minutes = 20,
     },
     excluded_filetypes = { "gitcommit", "gitrebase" },
+    versioned_releases_only = false, -- When true, only show updates when new release tags are available
+    version_tag_pattern = "v*", -- Glob pattern for version tags (e.g., "v*", "release-*")
   }
 
   local merged_config = vim.tbl_deep_extend("force", default_config, opts or {})

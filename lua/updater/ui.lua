@@ -14,7 +14,18 @@ end
 
 local function generate_branch_status(state, config)
   local lines = {}
-  table.insert(lines, "  Branch: " .. state.current_branch)
+
+  -- Build branch line with optional tag
+  local branch_line = "  Branch: " .. state.current_branch
+  if state.current_commit then
+    local short_commit = state.current_commit:sub(1, 7)
+    branch_line = branch_line .. " @ " .. short_commit
+    -- Add current tag if on one (will be highlighted green later)
+    if state.current_tag then
+      branch_line = branch_line .. " [" .. state.current_tag .. "]"
+    end
+  end
+  table.insert(lines, branch_line)
 
   if state.current_branch == config.main_branch then
     if state.ahead_count > 0 then
@@ -325,6 +336,240 @@ function M.generate_commit_log(state, config)
   return log_lines
 end
 
+-- ============================================================================
+-- Release-focused UI (for versioned_releases_only mode)
+-- ============================================================================
+
+local function generate_release_branch_status(state, config)
+  local lines = {}
+
+  -- Show current release prominently
+  local release_line = "  Current Release: "
+  if state.current_release then
+    release_line = release_line .. state.current_release
+  else
+    release_line = release_line .. "(no release)"
+  end
+  table.insert(lines, release_line)
+
+  -- Show branch info with detached HEAD handling
+  local branch_display = state.current_branch
+  if state.is_detached_head or state.current_branch == "HEAD" then
+    branch_display = "detached HEAD"
+    if state.current_tag then
+      branch_display = branch_display .. " at " .. state.current_tag
+    end
+  end
+
+  local branch_line = "  Branch: " .. branch_display
+  -- Only show commits since release if we're not exactly on a tag
+  if not state.current_tag and state.commits_since_release > 0 then
+    branch_line = branch_line .. " (+" .. state.commits_since_release .. " commits since release)"
+  end
+  table.insert(lines, branch_line)
+
+  return lines
+end
+
+local function generate_release_status_messages(state, config)
+  local messages = {}
+
+  if state.is_updating then
+    table.insert(messages, {
+      text = "  " .. M.get_loading_spinner(state) .. " Updating to latest release... Please wait.",
+      hl_group = "WarningMsg",
+    })
+    return messages
+  elseif state.is_installing_plugins then
+    table.insert(messages, {
+      text = "  " .. M.get_loading_spinner(state) .. " Installing plugin updates... Please wait.",
+      hl_group = "WarningMsg",
+    })
+    return messages
+  elseif state.is_refreshing then
+    table.insert(messages, {
+      text = "  " .. M.get_loading_spinner(state) .. " Checking for new releases... Please wait.",
+      hl_group = "WarningMsg",
+    })
+    return messages
+  end
+
+  -- Check for new release
+  if state.has_new_release and state.latest_remote_release then
+    table.insert(messages, {
+      text = "  New release available: " .. state.latest_remote_release,
+      hl_group = "String",
+    })
+  else
+    table.insert(messages, {
+      text = "  You are on the latest release!",
+      hl_group = "String",
+    })
+  end
+
+  -- Show plugin status
+  local has_plugins_behind = state.has_plugins_behind or false
+  if has_plugins_behind then
+    local plugins_behind_count = state.plugins_behind and #state.plugins_behind or 0
+    table.insert(messages, {
+      text = "  " .. tostring(plugins_behind_count) .. " plugin update(s) available",
+      hl_group = "String",
+    })
+  end
+
+  return messages
+end
+
+function M.generate_release_header(state, config)
+  local header = { "" }
+
+  -- Add release-focused branch status
+  local branch_lines = generate_release_branch_status(state, config)
+  for _, line in ipairs(branch_lines) do
+    table.insert(header, line)
+  end
+
+  table.insert(header, "")
+
+  -- Add release status messages
+  local status_messages = generate_release_status_messages(state, config)
+  local status_lines_start = #header
+  for _, msg in ipairs(status_messages) do
+    table.insert(header, msg.text)
+  end
+  table.insert(header, "")
+
+  return header, status_messages, status_lines_start
+end
+
+function M.generate_release_keybindings(state, config)
+  local lines = { "  Keybindings:" }
+  local keybind_data = {}
+
+  -- U - Update to latest release (when new release available)
+  if state.has_new_release then
+    table.insert(lines, "    " .. config.keymap.update_all .. " - Update to latest release")
+    table.insert(keybind_data, { key = config.keymap.update_all })
+  end
+
+  -- i - Install plugins (if plugin updates available)
+  if state.has_plugins_behind or state.has_plugins_ahead then
+    table.insert(lines, "    " .. config.keymap.install_plugins .. " - Sync plugins to release lockfile")
+    table.insert(keybind_data, { key = config.keymap.install_plugins })
+  end
+
+  -- r - Refresh
+  table.insert(lines, "    " .. config.keymap.refresh .. " - Check for new releases")
+  table.insert(keybind_data, { key = config.keymap.refresh })
+
+  -- q - Close
+  table.insert(lines, "    " .. config.keymap.close .. " - Close window")
+  table.insert(keybind_data, { key = config.keymap.close })
+
+  table.insert(lines, "")
+
+  return lines, keybind_data
+end
+
+function M.generate_commits_since_release_section(state, config)
+  local lines = {}
+
+  -- Only show if there are actual commits since the release (not on a tag)
+  local commits_list = state.commits_since_release_list or {}
+  if #commits_list > 0 and not state.current_tag then
+    table.insert(lines, "  Commits since " .. (state.current_release or "release") .. ":")
+    table.insert(lines, "  " .. Constants.SEPARATOR_LINE)
+
+    -- Show commits newer than the release (with yellow commit SHAs)
+    local current_hash = state.current_commit or ""
+
+    for _, commit in ipairs(commits_list) do
+      local indicator = "  "
+      if commit.hash == current_hash:sub(1, #commit.hash) then
+        indicator = "→ "
+      end
+      local line = "  " .. indicator .. commit.hash .. " - " .. commit.message
+      table.insert(lines, line)
+    end
+
+    -- Show the release commit at the bottom (with green tag before the message)
+    if state.release_commit then
+      local rc = state.release_commit
+      local tag = rc.tag or state.current_release
+      local line = "    " .. rc.hash .. " - [" .. tag .. "] " .. rc.message
+      table.insert(lines, line)
+    end
+
+    table.insert(lines, "  ")
+  end
+
+  return lines
+end
+
+function M.generate_releases_since_section(state, config)
+  local lines = {}
+  local releases_since = state.releases_since_current or {}
+
+  -- Show if there are newer releases available
+  if #releases_since > 0 then
+    table.insert(lines, "  Releases since " .. (state.current_release or "current") .. ":")
+    table.insert(lines, "  " .. Constants.SEPARATOR_LINE)
+
+    -- Show newer releases (newest first, reversed so current is at bottom)
+    -- releases_since is already sorted newest first, show them in that order
+    for _, release in ipairs(releases_since) do
+      local line = "    " .. release.hash .. " - [" .. release.tag .. "] " .. release.message
+      table.insert(lines, line)
+    end
+
+    -- Show current release at the bottom
+    if state.current_release then
+      local current_line = "  → "
+      if state.release_commit then
+        local rc = state.release_commit
+        current_line = current_line .. rc.hash .. " - [" .. state.current_release .. "] " .. rc.message .. " (current)"
+      else
+        -- Fallback if we don't have commit info
+        current_line = current_line .. "[" .. state.current_release .. "] (current)"
+      end
+      table.insert(lines, current_line)
+    end
+
+    table.insert(lines, "  ")
+  end
+
+  return lines
+end
+
+function M.generate_previous_releases_section(state, config)
+  local lines = {}
+  local releases_before = state.releases_before_current or {}
+
+  -- Show if there are older releases
+  if #releases_before > 0 then
+    table.insert(lines, "  Previous releases:")
+    table.insert(lines, "  " .. Constants.SEPARATOR_LINE)
+
+    -- Show older releases (already sorted newest first, so closest to current is first)
+    local max_items = Constants.MAX_SECTION_ITEMS
+    local count = math.min(#releases_before, max_items)
+    for i = 1, count do
+      local release = releases_before[i]
+      local line = "    " .. release.hash .. " - [" .. release.tag .. "] " .. release.message
+      table.insert(lines, line)
+    end
+
+    -- Show ellipsis if there are more releases
+    if #releases_before > max_items then
+      table.insert(lines, "    ... and " .. (#releases_before - max_items) .. " more")
+    end
+
+    table.insert(lines, "  ")
+  end
+
+  return lines
+end
+
 function M.generate_loading_state(state, config)
   local is_on_main = state.current_branch == config.main_branch
   local loading_msg = is_on_main and "Checking for updates..." or "Seeing what's new on main..."
@@ -361,8 +606,18 @@ local function add_highlight(buffer, ns_id, hl_group, line, col_start, col_end)
   vim.api.nvim_buf_add_highlight(buffer, ns_id, hl_group, line, col_start, col_end)
 end
 
-local function highlight_header(buffer, ns_id)
+local function highlight_header(buffer, ns_id, state)
+  -- Highlight the branch line
+  local line = vim.api.nvim_buf_get_lines(buffer, 1, 2, false)[1] or ""
   add_highlight(buffer, ns_id, "Directory", 1, 2, -1)
+
+  -- If there's a tag in brackets, highlight it green
+  if state.current_tag then
+    local tag_start = line:find("%[" .. vim.pesc(state.current_tag) .. "%]")
+    if tag_start then
+      add_highlight(buffer, ns_id, "String", 1, tag_start - 1, tag_start + #state.current_tag + 1)
+    end
+  end
 end
 
 local function highlight_status(buffer, ns_id, status_messages, status_lines_start)
@@ -525,7 +780,7 @@ function M.apply_highlighting(
   local ns_id = vim.api.nvim_create_namespace("DotfilesUpdater")
   vim.api.nvim_buf_clear_namespace(state.buffer, ns_id, 0, -1)
 
-  highlight_header(state.buffer, ns_id)
+  highlight_header(state.buffer, ns_id, state)
   highlight_status(state.buffer, ns_id, status_messages, status_lines_start)
   highlight_keybindings(state.buffer, ns_id, keybindings_start, keybind_data)
   highlight_restart_reminder(state.buffer, ns_id, state, restart_reminder_line)
@@ -533,6 +788,243 @@ function M.apply_highlighting(
   highlight_plugin_updates(state.buffer, ns_id, state)
   highlight_plugins_ahead(state.buffer, ns_id, state)
   highlight_commit_log(state.buffer, ns_id, state, config)
+end
+
+-- Highlighting for release-focused UI
+local function highlight_release_header(buffer, ns_id, state)
+  -- Line 1: Current Release
+  add_highlight(buffer, ns_id, "Title", 1, 2, 19) -- "Current Release:"
+  if state.current_release then
+    add_highlight(buffer, ns_id, "String", 1, 19, -1) -- Release tag in green
+  end
+
+  -- Line 2: Branch
+  add_highlight(buffer, ns_id, "Directory", 2, 2, -1)
+end
+
+local function highlight_commits_since_release(buffer, ns_id, state)
+  if not state.current_release then
+    return
+  end
+
+  local title_pattern = "Commits since " .. vim.pesc(state.current_release) .. ":"
+  local section_line = find_section_line(buffer, title_pattern)
+
+  if not section_line then
+    return
+  end
+
+  -- Highlight section title
+  add_highlight(buffer, ns_id, "Title", section_line, 2, -1)
+
+  -- Start after title and separator
+  local commit_start_line = section_line + 2
+  local commits_list = state.commits_since_release_list or {}
+  local current_hash = state.current_commit or ""
+
+  -- Highlight commits since release (yellow commit SHAs)
+  for i, commit in ipairs(commits_list) do
+    local line_num = commit_start_line + i - 1
+    local line = vim.api.nvim_buf_get_lines(buffer, line_num, line_num + 1, false)
+    if #line > 0 and line[1] then
+      local line_content = line[1]
+      local is_current = line_content:match("^  →")
+
+      -- Find the hash position
+      local hash_start = is_current and 4 or 4
+      local hash_end = hash_start + #commit.hash
+
+      if is_current then
+        -- Highlight current commit indicator in green
+        add_highlight(buffer, ns_id, "String", line_num, 2, 4)
+        -- Highlight commit hash in yellow with offset for glyph
+        add_highlight(buffer, ns_id, "WarningMsg", line_num, hash_start, hash_end + 2)
+      else
+        -- Highlight commit hash in yellow
+        add_highlight(buffer, ns_id, "WarningMsg", line_num, hash_start, hash_end)
+      end
+
+    end
+  end
+
+  -- Highlight the release commit line (last line before the empty line)
+  if state.release_commit then
+    local release_line_num = commit_start_line + #commits_list
+    local line = vim.api.nvim_buf_get_lines(buffer, release_line_num, release_line_num + 1, false)
+    if #line > 0 and line[1] then
+      local rc = state.release_commit
+      local tag = rc.tag or state.current_release
+
+      -- Format: "    hash - [tag] message"
+      -- Hash starts at position 4 (after "    ")
+      local hash_start = 4
+      local hash_end = hash_start + #rc.hash
+
+      -- Tag starts after "hash - [" = hash_end + 4
+      local tag_bracket_start = hash_end + 3  -- " - ["
+      local tag_bracket_end = tag_bracket_start + #tag + 2  -- includes []
+
+      -- Highlight hash in yellow
+      add_highlight(buffer, ns_id, "WarningMsg", release_line_num, hash_start, hash_end)
+
+      -- Highlight tag in green (including brackets)
+      add_highlight(buffer, ns_id, "String", release_line_num, tag_bracket_start, tag_bracket_end)
+    end
+  end
+end
+
+function M.highlight_releases_since(buffer, ns_id, state)
+  if not state.current_release then
+    return
+  end
+
+  local releases_since = state.releases_since_current or {}
+  if #releases_since == 0 then
+    return
+  end
+
+  local title_pattern = "Releases since " .. vim.pesc(state.current_release) .. ":"
+  local section_line = find_section_line(buffer, title_pattern)
+
+  if not section_line then
+    return
+  end
+
+  -- Highlight section title
+  add_highlight(buffer, ns_id, "Title", section_line, 2, -1)
+
+  -- Start after title and separator
+  local release_start_line = section_line + 2
+
+  -- Highlight each release line
+  -- Format: "    hash - [tag] message"
+  for i, release in ipairs(releases_since) do
+    local line_num = release_start_line + i - 1
+    local line = vim.api.nvim_buf_get_lines(buffer, line_num, line_num + 1, false)
+    if #line > 0 and line[1] then
+      -- Hash starts at position 4 (after "    ")
+      local hash_start = 4
+      local hash_end = hash_start + #release.hash
+
+      -- Tag starts after "hash - [" = hash_end + 4
+      local tag_bracket_start = hash_end + 3  -- " - ["
+      local tag_bracket_end = tag_bracket_start + #release.tag + 2  -- includes []
+
+      -- Highlight hash in yellow
+      add_highlight(buffer, ns_id, "WarningMsg", line_num, hash_start, hash_end)
+
+      -- Highlight tag in green (including brackets)
+      add_highlight(buffer, ns_id, "String", line_num, tag_bracket_start, tag_bracket_end)
+    end
+  end
+
+  -- Highlight the current release line (with arrow indicator)
+  if state.release_commit then
+    local current_line_num = release_start_line + #releases_since
+    local line = vim.api.nvim_buf_get_lines(buffer, current_line_num, current_line_num + 1, false)
+    if #line > 0 and line[1] then
+      local rc = state.release_commit
+
+      -- Format: "  → hash - [tag] message (current)"
+      -- Arrow indicator
+      add_highlight(buffer, ns_id, "String", current_line_num, 2, 4)
+
+      -- Hash starts after "  → " (position 4 + 2 for arrow width)
+      local hash_start = 4 + 2
+      local hash_end = hash_start + #rc.hash
+
+      -- Tag bracket position
+      local tag_bracket_start = hash_end + 3  -- " - ["
+      local tag_bracket_end = tag_bracket_start + #state.current_release + 2
+
+      -- Highlight hash in yellow
+      add_highlight(buffer, ns_id, "WarningMsg", current_line_num, hash_start, hash_end)
+
+      -- Highlight tag in green
+      add_highlight(buffer, ns_id, "String", current_line_num, tag_bracket_start, tag_bracket_end)
+
+      -- Highlight "(current)" at the end
+      local current_text = line[1]
+      local current_start = current_text:find("%(current%)")
+      if current_start then
+        add_highlight(buffer, ns_id, "Comment", current_line_num, current_start - 1, -1)
+      end
+    end
+  end
+end
+
+function M.highlight_previous_releases(buffer, ns_id, state)
+  local releases_before = state.releases_before_current or {}
+  if #releases_before == 0 then
+    return
+  end
+
+  local title_pattern = "Previous releases:"
+  local section_line = find_section_line(buffer, vim.pesc(title_pattern))
+
+  if not section_line then
+    return
+  end
+
+  -- Highlight section title
+  add_highlight(buffer, ns_id, "Title", section_line, 2, -1)
+
+  -- Start after title and separator
+  local release_start_line = section_line + 2
+
+  -- Highlight each release line
+  -- Format: "    hash - [tag] message"
+  local max_items = Constants.MAX_SECTION_ITEMS
+  local count = math.min(#releases_before, max_items)
+  for i = 1, count do
+    local release = releases_before[i]
+    local line_num = release_start_line + i - 1
+    local line = vim.api.nvim_buf_get_lines(buffer, line_num, line_num + 1, false)
+    if #line > 0 and line[1] then
+      -- Hash starts at position 4 (after "    ")
+      local hash_start = 4
+      local hash_end = hash_start + #release.hash
+
+      -- Tag starts after "hash - [" = hash_end + 4
+      local tag_bracket_start = hash_end + 3  -- " - ["
+      local tag_bracket_end = tag_bracket_start + #release.tag + 2  -- includes []
+
+      -- Highlight hash in yellow
+      add_highlight(buffer, ns_id, "WarningMsg", line_num, hash_start, hash_end)
+
+      -- Highlight tag in green (including brackets)
+      add_highlight(buffer, ns_id, "String", line_num, tag_bracket_start, tag_bracket_end)
+    end
+  end
+
+  -- Highlight the "... and X more" line if present
+  if #releases_before > max_items then
+    local more_line_num = release_start_line + count
+    add_highlight(buffer, ns_id, "Comment", more_line_num, 4, -1)
+  end
+end
+
+function M.apply_release_highlighting(
+  state,
+  config,
+  status_messages,
+  status_lines_start,
+  keybindings_start,
+  keybind_data,
+  restart_reminder_line
+)
+  local ns_id = vim.api.nvim_create_namespace("DotfilesUpdater")
+  vim.api.nvim_buf_clear_namespace(state.buffer, ns_id, 0, -1)
+
+  highlight_release_header(state.buffer, ns_id, state)
+  highlight_status(state.buffer, ns_id, status_messages, status_lines_start)
+  highlight_keybindings(state.buffer, ns_id, keybindings_start, keybind_data)
+  highlight_restart_reminder(state.buffer, ns_id, state, restart_reminder_line)
+  highlight_commits_since_release(state.buffer, ns_id, state)
+  M.highlight_releases_since(state.buffer, ns_id, state)
+  M.highlight_previous_releases(state.buffer, ns_id, state)
+  highlight_plugin_updates(state.buffer, ns_id, state)
+  highlight_plugins_ahead(state.buffer, ns_id, state)
 end
 
 function M.apply_loading_state_highlighting(state, config)

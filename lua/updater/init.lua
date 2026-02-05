@@ -8,6 +8,7 @@ local Spinner = require("updater.spinner")
 local Git = require("updater.git")
 local Utils = require("updater.utils")
 local Cache = require("updater.cache")
+local Version = require("updater.version")
 local M = {}
 
 -- Expose status module for external integrations
@@ -52,7 +53,20 @@ function M.open()
       Plugins.install_plugin_updates(config, render_callback)
     end,
     update_all = function()
-      Operations.update_dotfiles_and_plugins(config, render_callback)
+      if config.versioned_releases_only then
+        -- In versioned releases mode, switch to the latest release tag
+        Version.switch_to_latest(config, function(success, msg)
+          if success then
+            vim.notify(msg, vim.log.levels.INFO, { title = "Updater" })
+            -- Refresh to update the UI after switching
+            Operations.refresh(config, render_callback)
+          else
+            vim.notify(msg, vim.log.levels.ERROR, { title = "Updater" })
+          end
+        end)
+      else
+        Operations.update_dotfiles_and_plugins(config, render_callback)
+      end
     end,
   })
 
@@ -151,6 +165,16 @@ local function setup_user_commands()
     debug.register_commands()
     debug.toggle_debug_mode()
   end, { desc = "Toggle Updater debug mode" })
+
+  vim.api.nvim_create_user_command("DotfilesVersion", function(opts)
+    Version.handle_command(config, opts.args and vim.trim(opts.args) or "")
+  end, {
+    nargs = "?",
+    complete = function(arglead)
+      return Version.get_completion_list(config, arglead)
+    end,
+    desc = "Switch dotfiles to a specific version or show available versions",
+  })
 end
 
 function M.setup(opts)

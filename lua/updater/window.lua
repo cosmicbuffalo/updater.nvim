@@ -55,14 +55,72 @@ function M.setup_autocmds(close_callback)
   })
 end
 
-function M.render(config)
-  if not Status.state.buffer or not Status.state.is_open then
-    return
+-- Render release-focused UI for versioned_releases_only mode
+local function render_release_mode(config)
+  local header, status_messages, status_lines_start = UI.generate_release_header(Status.state, config)
+  local keybindings, keybind_data = UI.generate_release_keybindings(Status.state, config)
+  local restart_reminder = UI.generate_restart_reminder_section(Status.state)
+  local commits_since = UI.generate_commits_since_release_section(Status.state, config)
+  local releases_since = UI.generate_releases_since_section(Status.state, config)
+  local previous_releases = UI.generate_previous_releases_section(Status.state, config)
+  local plugin_update_info = UI.generate_plugin_updates_section(Status.state)
+  local plugins_ahead_info = UI.generate_plugins_ahead_section(Status.state)
+
+  local lines = {}
+
+  for _, line in ipairs(header) do
+    table.insert(lines, line)
   end
 
-  vim.api.nvim_buf_set_option(Status.state.buffer, "modifiable", true)
-  vim.api.nvim_buf_set_lines(Status.state.buffer, 0, -1, false, {})
+  local keybindings_start = #lines + 1
+  for _, line in ipairs(keybindings) do
+    table.insert(lines, line)
+  end
 
+  local restart_reminder_line = #lines + 1
+  for _, line in ipairs(restart_reminder) do
+    table.insert(lines, line)
+  end
+  if #restart_reminder == 0 then
+    restart_reminder_line = #lines - 1
+  end
+
+  for _, line in ipairs(commits_since) do
+    table.insert(lines, line)
+  end
+
+  for _, line in ipairs(releases_since) do
+    table.insert(lines, line)
+  end
+
+  for _, line in ipairs(previous_releases) do
+    table.insert(lines, line)
+  end
+
+  for _, line in ipairs(plugin_update_info) do
+    table.insert(lines, line)
+  end
+
+  for _, line in ipairs(plugins_ahead_info) do
+    table.insert(lines, line)
+  end
+
+  vim.api.nvim_buf_set_lines(Status.state.buffer, 0, -1, false, lines)
+  UI.apply_release_highlighting(
+    Status.state,
+    config,
+    status_messages,
+    status_lines_start,
+    keybindings_start,
+    keybind_data,
+    restart_reminder_line
+  )
+
+  return lines
+end
+
+-- Render commit-focused UI (default mode)
+local function render_commit_mode(config)
   local header, status_messages, status_lines_start = UI.generate_header(Status.state, config)
   local keybindings, keybind_data = UI.generate_keybindings(Status.state, config)
   local remote_commit_info = UI.generate_remote_commits_section(Status.state, config)
@@ -121,6 +179,24 @@ function M.render(config)
     keybind_data,
     restart_reminder_line
   )
+
+  return lines
+end
+
+function M.render(config)
+  if not Status.state.buffer or not Status.state.is_open then
+    return
+  end
+
+  vim.api.nvim_buf_set_option(Status.state.buffer, "modifiable", true)
+  vim.api.nvim_buf_set_lines(Status.state.buffer, 0, -1, false, {})
+
+  local lines
+  if config.versioned_releases_only then
+    lines = render_release_mode(config)
+  else
+    lines = render_commit_mode(config)
+  end
 
   vim.api.nvim_buf_set_option(Status.state.buffer, "modifiable", false)
   vim.api.nvim_win_set_height(Status.state.window, math.min(#lines + 1, Constants.MAX_WINDOW_HEIGHT_LINES))

@@ -502,4 +502,372 @@ function M.get_validation_status(path)
   return validation_cache[path]
 end
 
+-- Get list of version tags sorted by semantic version (newest first)
+function M.get_version_tags(config, repo_path, callback)
+  local pattern = config.version_tag_pattern or "v*"
+  -- Fetch tags first, then list them sorted by version
+  M.execute_command(
+    "git fetch --tags --quiet && git tag -l " .. vim.fn.shellescape(pattern) .. " --sort=-version:refname",
+    "status",
+    "Git tag list",
+    config,
+    repo_path,
+    function(result, err)
+      if err then
+        callback({}, err)
+        return
+      end
+
+      local tags = {}
+      if result then
+        for line in result:gmatch("[^\r\n]+") do
+          local tag = vim.trim(line)
+          if tag ~= "" then
+            table.insert(tags, tag)
+          end
+        end
+      end
+      callback(tags, nil)
+    end
+  )
+end
+
+-- Check if HEAD is on a tag, returns tag name or nil
+function M.get_head_tag(config, repo_path, callback)
+  M.execute_command(
+    "git describe --tags --exact-match HEAD 2>/dev/null || echo ''",
+    "status",
+    "Git tag check",
+    config,
+    repo_path,
+    function(result, err)
+      if err then
+        callback(nil, err)
+        return
+      end
+
+      local tag = result and vim.trim(result) or ""
+      if tag == "" then
+        callback(nil, nil)
+      else
+        callback(tag, nil)
+      end
+    end
+  )
+end
+
+-- Checkout a specific tag (creates detached HEAD)
+function M.checkout_tag(config, repo_path, tag_name, callback)
+  M.execute_command(
+    "git checkout tags/" .. vim.fn.shellescape(tag_name),
+    "default",
+    "Git checkout tag",
+    config,
+    repo_path,
+    function(result, err)
+      if err then
+        callback(false, "Failed to checkout tag: " .. err)
+      else
+        callback(true, nil)
+      end
+    end
+  )
+end
+
+-- Expose uncommitted changes check (already exists as local, make it public)
+function M.has_uncommitted_changes(config, repo_path, callback)
+  M.execute_command("git status --porcelain", "status", "Git status", config, repo_path, function(result, err)
+    if err then
+      callback(nil, err)
+    else
+      -- If output is non-empty, there are uncommitted changes
+      local has_changes = result and #vim.trim(result) > 0
+      callback(has_changes, nil)
+    end
+  end)
+end
+
+-- Get the latest release tag that is an ancestor of the given ref (or HEAD)
+-- This finds the most recent version tag reachable from the current commit
+function M.get_latest_release_for_ref(config, repo_path, ref, callback)
+  ref = ref or "HEAD"
+  local pattern = config.version_tag_pattern or "v*"
+  M.execute_command(
+    "git describe --tags --abbrev=0 --match " .. vim.fn.shellescape(pattern) .. " " .. ref .. " 2>/dev/null || echo ''",
+    "status",
+    "Git release check",
+    config,
+    repo_path,
+    function(result, err)
+      if err then
+        callback(nil, err)
+        return
+      end
+
+      local tag = result and vim.trim(result) or ""
+      if tag == "" then
+        callback(nil, nil)
+      else
+        callback(tag, nil)
+      end
+    end
+  )
+end
+
+-- Get the latest release tag on the remote main branch
+function M.get_latest_remote_release(config, repo_path, callback)
+  local main = config.main_branch or "main"
+  M.get_latest_release_for_ref(config, repo_path, "origin/" .. main, callback)
+end
+
+-- Count commits between a tag and HEAD (commits since release)
+function M.get_commits_since_tag(config, repo_path, tag, callback)
+  if not tag then
+    callback(0, nil)
+    return
+  end
+
+  M.execute_command(
+    "git rev-list " .. vim.fn.shellescape(tag) .. "..HEAD --count",
+    "status",
+    "Git commit count",
+    config,
+    repo_path,
+    function(result, err)
+      if err then
+        callback(0, err)
+        return
+      end
+
+      local count = tonumber(vim.trim(result or "0")) or 0
+      callback(count, nil)
+    end
+  )
+end
+
+-- Compare two version tags to see if remote is newer
+-- Returns: 1 if tag1 > tag2, -1 if tag1 < tag2, 0 if equal
+function M.compare_version_tags(tag1, tag2)
+  if not tag1 and not tag2 then
+    return 0
+  end
+  if not tag1 then
+    return -1
+  end
+  if not tag2 then
+    return 1
+  end
+
+  -- Extract version numbers from tags like "v1.2.3"
+  local function parse_version(tag)
+    local major, minor, patch = tag:match("v?(%d+)%.?(%d*)%.?(%d*)")
+    return {
+      tonumber(major) or 0,
+      tonumber(minor) or 0,
+      tonumber(patch) or 0,
+    }
+  end
+
+  local v1 = parse_version(tag1)
+  local v2 = parse_version(tag2)
+
+  for i = 1, 3 do
+    if v1[i] > v2[i] then
+      return 1
+    elseif v1[i] < v2[i] then
+      return -1
+    end
+  end
+
+  return 0
+end
+
+-- Get the list of commits since a tag (for display)
+function M.get_commits_since_tag_list(config, repo_path, tag, callback)
+  if not tag then
+    callback({}, nil)
+    return
+  end
+
+  local log_format = '--format=format:"%h|%s|%an|%ar"'
+  M.execute_command(
+    "git log " .. log_format .. " " .. vim.fn.shellescape(tag) .. "..HEAD",
+    "log",
+    "Git commits since tag",
+    config,
+    repo_path,
+    function(result, err)
+      if err then
+        callback({}, err)
+        return
+      end
+
+      local commits = {}
+      if result then
+        for line in result:gmatch("[^\r\n]+") do
+          local parts = vim.split(line, "|", { plain = true })
+          if #parts >= 4 then
+            table.insert(commits, {
+              hash = vim.trim(parts[1] or ""),
+              message = vim.trim(parts[2] or ""),
+              author = vim.trim(parts[3] or ""),
+              date = vim.trim(parts[4] or ""),
+            })
+          end
+        end
+      end
+      callback(commits, nil)
+    end
+  )
+end
+
+-- Get the commit info for a specific tag
+function M.get_tag_commit_info(config, repo_path, tag, callback)
+  if not tag then
+    callback(nil, nil)
+    return
+  end
+
+  local log_format = '--format=format:"%h|%s|%an|%ar"'
+  M.execute_command(
+    "git log " .. log_format .. " -1 " .. vim.fn.shellescape(tag),
+    "log",
+    "Git tag commit",
+    config,
+    repo_path,
+    function(result, err)
+      if err then
+        callback(nil, err)
+        return
+      end
+
+      if result then
+        local parts = vim.split(result, "|", { plain = true })
+        if #parts >= 4 then
+          callback({
+            hash = vim.trim(parts[1] or ""),
+            message = vim.trim(parts[2] or ""),
+            author = vim.trim(parts[3] or ""),
+            date = vim.trim(parts[4] or ""),
+            tag = tag,
+          }, nil)
+          return
+        end
+      end
+      callback(nil, nil)
+    end
+  )
+end
+
+-- Get releases (tags) between current tag and latest tag
+-- Returns tags newer than current_tag, sorted newest first
+function M.get_releases_since_tag(config, repo_path, current_tag, all_tags, callback)
+  if not current_tag or not all_tags or #all_tags == 0 then
+    callback({}, nil)
+    return
+  end
+
+  -- all_tags is sorted newest first, so we collect tags until we hit current_tag
+  local releases_since = {}
+  for _, tag in ipairs(all_tags) do
+    if tag == current_tag then
+      break
+    end
+    table.insert(releases_since, tag)
+  end
+
+  -- Get commit info for each release
+  local results = {}
+  local remaining = #releases_since
+
+  if remaining == 0 then
+    callback({}, nil)
+    return
+  end
+
+  for i, tag in ipairs(releases_since) do
+    M.get_tag_commit_info(config, repo_path, tag, function(commit_info, _)
+      results[i] = commit_info or { tag = tag, hash = "", message = "", author = "", date = "" }
+      remaining = remaining - 1
+      if remaining == 0 then
+        -- Filter out nil entries and return in order
+        local final = {}
+        for j = 1, #releases_since do
+          if results[j] then
+            table.insert(final, results[j])
+          end
+        end
+        callback(final, nil)
+      end
+    end)
+  end
+end
+
+-- Get releases before (older than) a given tag
+-- Returns tags sorted newest first (closest to current first)
+function M.get_releases_before_tag(config, repo_path, current_tag, all_tags, max_count, callback)
+  if not current_tag or not all_tags or #all_tags == 0 then
+    callback({}, nil)
+    return
+  end
+
+  -- all_tags is sorted newest first, so we collect tags after we hit current_tag
+  local releases_before = {}
+  local found_current = false
+  for _, tag in ipairs(all_tags) do
+    if found_current then
+      table.insert(releases_before, tag)
+      if max_count and #releases_before >= max_count then
+        break
+      end
+    elseif tag == current_tag then
+      found_current = true
+    end
+  end
+
+  -- Get commit info for each release
+  local results = {}
+  local remaining = #releases_before
+
+  if remaining == 0 then
+    callback({}, nil)
+    return
+  end
+
+  for i, tag in ipairs(releases_before) do
+    M.get_tag_commit_info(config, repo_path, tag, function(commit_info, _)
+      results[i] = commit_info or { tag = tag, hash = "", message = "", author = "", date = "" }
+      remaining = remaining - 1
+      if remaining == 0 then
+        -- Filter out nil entries and return in order
+        local final = {}
+        for j = 1, #releases_before do
+          if results[j] then
+            table.insert(final, results[j])
+          end
+        end
+        callback(final, nil)
+      end
+    end)
+  end
+end
+
+-- Check if we're on a detached HEAD
+function M.is_detached_head(config, repo_path, callback)
+  M.execute_command(
+    "git symbolic-ref -q HEAD >/dev/null 2>&1 && echo 'attached' || echo 'detached'",
+    "status",
+    "Git HEAD check",
+    config,
+    repo_path,
+    function(result, err)
+      if err then
+        callback(false, err)
+        return
+      end
+      callback(vim.trim(result or "") == "detached", nil)
+    end
+  )
+end
+
 return M

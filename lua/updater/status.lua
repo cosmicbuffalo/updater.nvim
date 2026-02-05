@@ -49,6 +49,23 @@ local state = {
   debug_enabled = false,
   debug_simulate_dotfiles = 0,
   debug_simulate_plugins = 0,
+
+  -- Version tracking state
+  version_mode = "latest", -- "latest" | "pinned"
+  pinned_version = nil, -- tag name when pinned
+  current_tag = nil, -- tag if HEAD is exactly on one
+  is_switching_version = false,
+
+  -- Release tracking state (for versioned_releases_only mode)
+  current_release = nil, -- latest release tag on current branch
+  latest_remote_release = nil, -- latest release tag on remote main
+  has_new_release = false, -- true if remote has newer release
+  commits_since_release = 0, -- commits on branch after current_release
+  commits_since_release_list = {}, -- actual commit objects since release
+  release_commit = nil, -- commit info for the current release tag
+  releases_since_current = {}, -- release tags newer than current release
+  releases_before_current = {}, -- release tags older than current release
+  is_detached_head = false, -- true if on detached HEAD
 }
 
 function M.stop_periodic_timer()
@@ -143,6 +160,21 @@ function M.get_update_text(format)
     return table.concat(parts, " ")
   else
     return table.concat(parts, ", ") .. " update" .. (M.get_update_count() == 1 and "" or "s")
+  end
+end
+
+-- Version tracking helpers
+function M.is_pinned_to_version()
+  return state.version_mode == "pinned" and state.pinned_version ~= nil
+end
+
+function M.get_version_display()
+  if state.version_mode == "pinned" and state.pinned_version then
+    return state.pinned_version
+  elseif state.current_tag then
+    return state.current_tag
+  else
+    return "latest"
   end
 end
 

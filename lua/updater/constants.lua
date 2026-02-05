@@ -22,4 +22,8 @@ M.SEPARATOR_LINE = string.rep("─", 70)
 -- Animation constants
 M.SPINNER_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
+-- Version switching constants
+M.VERSION_CACHE_TTL = 60 -- seconds to cache tag list
+M.MAX_SECTION_ITEMS = 10 -- max items to show in release/commit sections
+
 return M
