@@ -40,7 +40,7 @@ describe("operations module", function()
     Status.state.is_installing_plugins = false
     Status.state.needs_update = false
     Status.state.has_plugin_updates = false
-    Status.state.current_branch = "unknown"
+    Status.state.current_branch = "Loading..."
     Status.state.ahead_count = 0
     Status.state.behind_count = 0
     Status.state.last_check_time = nil

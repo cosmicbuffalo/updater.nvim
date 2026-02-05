@@ -1,6 +1,8 @@
 local Git = require("updater.git")
 local Status = require("updater.status")
+local Spinner = require("updater.spinner")
 local Constants = require("updater.constants")
+local Operations -- Lazy loaded to avoid circular dependency
 local M = {}
 
 -- Cache for version tags
@@ -34,48 +36,102 @@ function M.has_uncommitted_changes(config, callback)
   Git.has_uncommitted_changes(config, config.repo_path, callback)
 end
 
--- Restore plugins via lazy.restore()
-local function restore_lazy_plugins(callback)
-  local ok, lazy = pcall(require, "lazy")
-  if not ok then
-    callback(false, "lazy.nvim not available")
-    return
-  end
-
-  -- lazy.restore() restores plugins to versions in lazy-lock.json
-  local restore_ok, restore_err = pcall(function()
-    lazy.restore({ wait = true })
-  end)
-
-  if not restore_ok then
-    callback(false, "Failed to restore plugins: " .. tostring(restore_err))
-  else
-    callback(true, nil)
-  end
+-- Check if mason-lock plugin is installed
+local function has_mason_lock()
+  local ok = pcall(require, "mason-lock")
+  return ok
 end
 
--- Restore mason tools via mason-lock
-local function restore_mason_tools(callback)
-  local ok, mason_lock = pcall(require, "mason-lock")
-  if not ok then
-    -- mason-lock not installed, skip silently
-    callback(true, nil)
-    return
+-- Restore plugins and mason tools in a headless Neovim instance
+-- This avoids opening the Lazy UI or Mason UI in the current session
+local function restore_in_headless(callback)
+  -- Check if mason-lock is available before including it in the script
+  local include_mason = has_mason_lock()
+
+  -- Build the restore script
+  local restore_script = [[
+vim.schedule(function()
+  -- Wait a bit for plugins to initialize
+  vim.defer_fn(function()
+    -- Restore lazy plugins silently
+    local lazy_ok, lazy = pcall(require, "lazy")
+    if lazy_ok then
+      -- Use pcall to catch any errors
+      pcall(function()
+        lazy.restore({ wait = true })
+      end)
+    end
+]]
+
+  if include_mason then
+    restore_script = restore_script .. [[
+    -- Restore mason tools
+    local mason_ok, mason_lock = pcall(require, "mason-lock")
+    if mason_ok then
+      pcall(function()
+        mason_lock.restore_from_lockfile()
+      end)
+    end
+]]
   end
 
-  local restore_ok, restore_err = pcall(function()
-    mason_lock.restore_from_lockfile()
-  end)
+  restore_script = restore_script .. [[
+    -- Exit after operations complete
+    vim.defer_fn(function()
+      vim.cmd("qa!")
+    end, 500)
+  end, 100)
+end)
+]]
 
-  if not restore_ok then
-    callback(false, "Failed to restore mason tools: " .. tostring(restore_err))
-  else
-    callback(true, nil)
+  -- Write to temp file
+  local script_path = vim.fn.tempname() .. "_restore.lua"
+  local f = io.open(script_path, "w")
+  if not f then
+    callback(false, "Failed to create restore script")
+    return
+  end
+  f:write(restore_script)
+  f:close()
+
+  -- Run headless Neovim with the user's config
+  local handle = vim.fn.jobstart({
+    "nvim",
+    "--headless",
+    "-c",
+    "luafile " .. script_path,
+  }, {
+    on_exit = function(_, code)
+      -- Clean up temp file
+      os.remove(script_path)
+
+      vim.schedule(function()
+        if code == 0 then
+          callback(true, nil)
+        else
+          callback(false, "Restore process exited with code " .. code)
+        end
+      end)
+    end,
+    stdout_buffered = true,
+    stderr_buffered = true,
+  })
+
+  if handle <= 0 then
+    os.remove(script_path)
+    callback(false, "Failed to start restore process")
   end
 end
 
 -- Switch to a specific version tag
-function M.switch_to_version(config, version, callback)
+-- Helper to clear switching state on error
+local function clear_switching_state(state)
+  state.is_switching_version = false
+  state.switching_to_version = nil
+  Spinner.stop_loading_spinner()
+end
+
+function M.switch_to_version(config, version, callback, render_callback)
   local state = Status.state
 
   -- Prevent concurrent switches
@@ -85,17 +141,28 @@ function M.switch_to_version(config, version, callback)
   end
 
   state.is_switching_version = true
+  state.switching_to_version = version
+  state.recently_switched_to = nil -- Clear any previous success message
+
+  -- Capture previous version for upgrade/downgrade detection
+  local previous_release = state.current_release
+
+  -- Start spinner and render immediately
+  Spinner.start_loading_spinner(render_callback)
+  if render_callback then
+    render_callback()
+  end
 
   -- Step 1: Check for uncommitted changes
   M.has_uncommitted_changes(config, function(has_changes, err)
     if err then
-      state.is_switching_version = false
+      clear_switching_state(state)
       callback(false, "Failed to check for changes: " .. err)
       return
     end
 
     if has_changes then
-      state.is_switching_version = false
+      clear_switching_state(state)
       callback(false, "Cannot switch: uncommitted changes exist. Commit or stash your changes first.")
       return
     end
@@ -103,7 +170,7 @@ function M.switch_to_version(config, version, callback)
     -- Step 2: Verify tag exists
     M.get_available_versions(config, function(tags, tags_err)
       if tags_err then
-        state.is_switching_version = false
+        clear_switching_state(state)
         callback(false, "Failed to fetch versions: " .. tags_err)
         return
       end
@@ -117,7 +184,7 @@ function M.switch_to_version(config, version, callback)
       end
 
       if not found then
-        state.is_switching_version = false
+        clear_switching_state(state)
         local available = table.concat(vim.list_slice(tags, 1, math.min(5, #tags)), ", ")
         callback(false, "Version " .. version .. " not found. Available: " .. available)
         return
@@ -126,30 +193,37 @@ function M.switch_to_version(config, version, callback)
       -- Step 3: Checkout tag
       Git.checkout_tag(config, config.repo_path, version, function(checkout_ok, checkout_err)
         if not checkout_ok then
-          state.is_switching_version = false
+          clear_switching_state(state)
           callback(false, checkout_err)
           return
         end
 
-        -- Step 4: Restore plugins
+        -- Step 4: Restore plugins and mason tools in headless instance
         vim.schedule(function()
-          restore_lazy_plugins(function(lazy_ok, lazy_err)
-            if not lazy_ok then
-              vim.notify("Warning: " .. lazy_err .. ". Run :Lazy restore manually.", vim.log.levels.WARN)
+          restore_in_headless(function(restore_ok, restore_err)
+            if not restore_ok then
+              vim.notify(
+                "Warning: " .. (restore_err or "unknown error") .. ". Run :Lazy restore manually.",
+                vim.log.levels.WARN
+              )
             end
 
-            -- Step 5: Restore mason tools
-            restore_mason_tools(function(mason_ok, mason_err)
-              if not mason_ok then
-                vim.notify("Warning: " .. mason_err .. ". Run :MasonLockRestore manually.", vim.log.levels.WARN)
-              end
+            -- Step 5: Refresh state silently (like opening the TUI fresh)
+            -- Lazy load Operations to avoid circular dependency
+            if not Operations then
+              Operations = require("updater.operations")
+            end
 
-              -- Step 6: Update state
+            Operations.refresh_silent(config, function()
+              -- Step 6: Set version switch specific state (not part of refresh)
+              state.is_switching_version = false
+              state.switching_to_version = nil
+              state.recently_switched_to = version
+              state.switched_from_version = previous_release
               state.version_mode = "pinned"
               state.pinned_version = version
-              state.current_tag = version
-              state.is_switching_version = false
 
+              Spinner.stop_loading_spinner()
               callback(true, "Switched to " .. version)
             end)
           end)
@@ -160,82 +234,32 @@ function M.switch_to_version(config, version, callback)
 end
 
 -- Switch to latest (newest release tag)
-function M.switch_to_latest(config, callback)
-  local state = Status.state
-
-  -- Prevent concurrent switches
-  if state.is_switching_version then
-    callback(false, "Version switch already in progress")
-    return
-  end
-
-  state.is_switching_version = true
-
-  -- Step 1: Check for uncommitted changes
-  M.has_uncommitted_changes(config, function(has_changes, err)
-    if err then
-      state.is_switching_version = false
-      callback(false, "Failed to check for changes: " .. err)
+function M.switch_to_latest(config, callback, render_callback)
+  -- Get the latest version tag first
+  M.get_available_versions(config, function(tags, tags_err)
+    if tags_err then
+      callback(false, "Failed to fetch versions: " .. tags_err)
       return
     end
 
-    if has_changes then
-      state.is_switching_version = false
-      callback(false, "Cannot switch: uncommitted changes exist. Commit or stash your changes first.")
+    if #tags == 0 then
+      callback(false, "No release tags found")
       return
     end
 
-    -- Step 2: Get the latest version tag
-    M.get_available_versions(config, function(tags, tags_err)
-      if tags_err then
-        state.is_switching_version = false
-        callback(false, "Failed to fetch versions: " .. tags_err)
-        return
+    -- First tag is the latest (sorted by version descending)
+    local latest_tag = tags[1]
+
+    -- Use switch_to_version to do the actual switch
+    M.switch_to_version(config, latest_tag, function(success, msg)
+      if success then
+        -- Update state to reflect "latest" mode instead of "pinned"
+        local state = Status.state
+        state.version_mode = "latest"
+        state.pinned_version = nil
       end
-
-      if #tags == 0 then
-        state.is_switching_version = false
-        callback(false, "No release tags found")
-        return
-      end
-
-      -- First tag is the latest (sorted by version descending)
-      local latest_tag = tags[1]
-
-      -- Step 3: Checkout the latest tag
-      Git.checkout_tag(config, config.repo_path, latest_tag, function(checkout_ok, checkout_err)
-        if not checkout_ok then
-          state.is_switching_version = false
-          callback(false, checkout_err)
-          return
-        end
-
-        -- Step 4: Restore plugins
-        vim.schedule(function()
-          restore_lazy_plugins(function(lazy_ok, lazy_err)
-            if not lazy_ok then
-              vim.notify("Warning: " .. lazy_err .. ". Run :Lazy restore manually.", vim.log.levels.WARN)
-            end
-
-            -- Step 5: Restore mason tools
-            restore_mason_tools(function(mason_ok, mason_err)
-              if not mason_ok then
-                vim.notify("Warning: " .. mason_err .. ". Run :MasonLockRestore manually.", vim.log.levels.WARN)
-              end
-
-              -- Step 7: Update state
-              -- When switching to latest, we're not "pinned" - we're on the latest release
-              state.version_mode = "latest"
-              state.pinned_version = nil
-              state.current_tag = latest_tag
-              state.is_switching_version = false
-
-              callback(true, "Switched to " .. latest_tag)
-            end)
-          end)
-        end)
-      end)
-    end)
+      callback(success, msg)
+    end, render_callback)
   end)
 end
 

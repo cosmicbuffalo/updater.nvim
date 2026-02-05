@@ -13,7 +13,7 @@ local state = {
   is_installing_plugins = false,
 
   -- Git status
-  current_branch = "unknown",
+  current_branch = "Loading...",
   current_commit = nil,
   ahead_count = 0,
   behind_count = 0,
@@ -55,6 +55,9 @@ local state = {
   pinned_version = nil, -- tag name when pinned
   current_tag = nil, -- tag if HEAD is exactly on one
   is_switching_version = false,
+  switching_to_version = nil, -- target version during switch
+  recently_switched_to = nil, -- version we just switched to (for success message)
+  switched_from_version = nil, -- version we switched from (for upgrade/downgrade detection)
 
   -- Release tracking state (for versioned_releases_only mode)
   current_release = nil, -- latest release tag on current branch
@@ -66,6 +69,11 @@ local state = {
   releases_since_current = {}, -- release tags newer than current release
   releases_before_current = {}, -- release tags older than current release
   is_detached_head = false, -- true if on detached HEAD
+
+  -- Release details expansion state
+  expanded_releases = {}, -- map of tag -> true for expanded releases
+  release_details_cache = {}, -- map of tag -> details object
+  fetching_release_details = {}, -- map of tag -> true while fetching
 }
 
 function M.stop_periodic_timer()
@@ -175,6 +183,39 @@ function M.get_version_display()
     return state.current_tag
   else
     return "latest"
+  end
+end
+
+-- Release expansion helpers
+function M.is_release_expanded(tag)
+  return state.expanded_releases[tag] == true
+end
+
+function M.toggle_release_expansion(tag)
+  if state.expanded_releases[tag] then
+    state.expanded_releases[tag] = nil
+  else
+    state.expanded_releases[tag] = true
+  end
+end
+
+function M.get_release_details(tag)
+  return state.release_details_cache[tag]
+end
+
+function M.set_release_details(tag, details)
+  state.release_details_cache[tag] = details
+end
+
+function M.is_fetching_release_details(tag)
+  return state.fetching_release_details[tag] == true
+end
+
+function M.set_fetching_release_details(tag, fetching)
+  if fetching then
+    state.fetching_release_details[tag] = true
+  else
+    state.fetching_release_details[tag] = nil
   end
 end
 

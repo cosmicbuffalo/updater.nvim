@@ -9,6 +9,7 @@ local Git = require("updater.git")
 local Utils = require("updater.utils")
 local Cache = require("updater.cache")
 local Version = require("updater.version")
+local ReleaseDetails = require("updater.release_details")
 local M = {}
 
 -- Expose status module for external integrations
@@ -55,17 +56,87 @@ function M.open()
     update_all = function()
       if config.versioned_releases_only then
         -- In versioned releases mode, switch to the latest release tag
+        -- Same behavior as hitting 's' on the latest release
         Version.switch_to_latest(config, function(success, msg)
           if success then
-            vim.notify(msg, vim.log.levels.INFO, { title = "Updater" })
-            -- Refresh to update the UI after switching
-            Operations.refresh(config, render_callback)
+            -- Just render to show the success message, don't refresh
+            render_callback()
           else
             vim.notify(msg, vim.log.levels.ERROR, { title = "Updater" })
           end
-        end)
+        end, render_callback)
       else
         Operations.update_dotfiles_and_plugins(config, render_callback)
+      end
+    end,
+    toggle_release = function()
+      -- Get current cursor position (1-indexed in vim)
+      local cursor_pos = vim.api.nvim_win_get_cursor(state.window)
+      local cursor_line = cursor_pos[1] - 1 -- Convert to 0-indexed for line mapping
+      local cursor_col = cursor_pos[2]
+      local tag = ReleaseDetails.get_release_at_line(cursor_line)
+      if tag then
+        -- Create a callback that restores cursor position after render
+        local restore_cursor_callback = function()
+          render_callback()
+          -- Restore cursor position after render
+          vim.schedule(function()
+            if state.window and vim.api.nvim_win_is_valid(state.window) then
+              -- Clamp line to buffer bounds
+              local line_count = vim.api.nvim_buf_line_count(state.buffer)
+              local target_line = math.min(cursor_pos[1], line_count)
+              vim.api.nvim_win_set_cursor(state.window, { target_line, cursor_col })
+            end
+          end)
+        end
+        ReleaseDetails.toggle_release(config, tag, restore_cursor_callback)
+      end
+    end,
+    switch_to_release = function()
+      -- Get current cursor position (1-indexed in vim)
+      local cursor_pos = vim.api.nvim_win_get_cursor(state.window)
+      local cursor_line = cursor_pos[1] - 1 -- Convert to 0-indexed for line mapping
+      local tag = ReleaseDetails.get_release_at_line(cursor_line)
+      if tag then
+        -- Check if already on this release
+        if state.current_release == tag then
+          vim.notify("Already on " .. tag, vim.log.levels.ERROR, { title = "Updater" })
+          return
+        end
+        Version.switch_to_version(config, tag, function(success, msg)
+          if success then
+            -- Just render to show the success message, don't refresh
+            render_callback()
+          else
+            vim.notify(msg, vim.log.levels.ERROR, { title = "Updater" })
+          end
+        end, render_callback)
+      end
+    end,
+    copy_release_url = function()
+      -- Get current cursor position (1-indexed in vim)
+      local cursor_pos = vim.api.nvim_win_get_cursor(state.window)
+      local cursor_line = cursor_pos[1] - 1 -- Convert to 0-indexed for line mapping
+      local tag = ReleaseDetails.get_release_at_line(cursor_line)
+      if tag then
+        -- Get the release details to find the URL
+        local details = Status.get_release_details(tag)
+        if details and details.url then
+          vim.fn.setreg("+", details.url)
+          vim.fn.setreg("*", details.url)
+          vim.notify("Copied: " .. details.url, vim.log.levels.INFO, { title = "Updater" })
+        else
+          -- Construct URL from config if details not loaded
+          local remote_url = config.github_url or config.remote_url
+          if remote_url then
+            local url = remote_url:gsub("%.git$", "") .. "/releases/tag/" .. tag
+            vim.fn.setreg("+", url)
+            vim.fn.setreg("*", url)
+            vim.notify("Copied: " .. url, vim.log.levels.INFO, { title = "Updater" })
+          else
+            vim.notify("Could not determine release URL", vim.log.levels.WARN, { title = "Updater" })
+          end
+        end
       end
     end,
   })

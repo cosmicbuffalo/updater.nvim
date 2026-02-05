@@ -1,6 +1,7 @@
 local UI = require("updater.ui")
 local Status = require("updater.status")
 local Constants = require("updater.constants")
+local ReleaseDetails = require("updater.release_details")
 local M = {}
 
 function M.create_window(config)
@@ -43,6 +44,19 @@ function M.setup_keymaps(config, callbacks)
   vim.keymap.set("n", config.keymap.refresh, callbacks.refresh, opts)
   vim.keymap.set("n", config.keymap.install_plugins, callbacks.install_plugins, opts)
   vim.keymap.set("n", config.keymap.update_all, callbacks.update_all, opts)
+
+  -- Versioned releases only mode keymaps
+  if config.versioned_releases_only then
+    if callbacks.toggle_release then
+      vim.keymap.set("n", "<CR>", callbacks.toggle_release, opts)
+    end
+    if callbacks.switch_to_release then
+      vim.keymap.set("n", "s", callbacks.switch_to_release, opts)
+    end
+    if callbacks.copy_release_url then
+      vim.keymap.set("n", "y", callbacks.copy_release_url, opts)
+    end
+  end
 end
 
 function M.setup_autocmds(close_callback)
@@ -61,10 +75,27 @@ local function render_release_mode(config)
   local keybindings, keybind_data = UI.generate_release_keybindings(Status.state, config)
   local restart_reminder = UI.generate_restart_reminder_section(Status.state)
   local commits_since = UI.generate_commits_since_release_section(Status.state, config)
-  local releases_since = UI.generate_releases_since_section(Status.state, config)
-  local previous_releases = UI.generate_previous_releases_section(Status.state, config)
+  local current_release, current_release_lines = UI.generate_current_release_section(Status.state, config)
+  local releases_since, releases_since_lines = UI.generate_releases_since_section(Status.state, config)
+  local previous_releases, previous_releases_lines = UI.generate_previous_releases_section(Status.state, config)
   local plugin_update_info = UI.generate_plugin_updates_section(Status.state)
   local plugins_ahead_info = UI.generate_plugins_ahead_section(Status.state)
+
+  -- Clear existing line mappings
+  ReleaseDetails.clear_line_mapping()
+
+  -- Build all tags list for previous tag lookups
+  local all_tags = {}
+  for _, r in ipairs(Status.state.releases_since_current or {}) do
+    table.insert(all_tags, r.tag)
+  end
+  if Status.state.current_release then
+    table.insert(all_tags, Status.state.current_release)
+  end
+  for _, r in ipairs(Status.state.releases_before_current or {}) do
+    table.insert(all_tags, r.tag)
+  end
+  ReleaseDetails.set_all_tags(all_tags)
 
   local lines = {}
 
@@ -89,12 +120,34 @@ local function render_release_mode(config)
     table.insert(lines, line)
   end
 
-  for _, line in ipairs(releases_since) do
+  -- Track where releases_since section starts (shown above current release)
+  local releases_since_start = #lines
+  for i, line in ipairs(releases_since) do
     table.insert(lines, line)
+    -- Register release lines with absolute line numbers (0-indexed)
+    if releases_since_lines[i] then
+      ReleaseDetails.register_release_line(releases_since_start + i - 1, releases_since_lines[i])
+    end
   end
 
-  for _, line in ipairs(previous_releases) do
+  -- Track where current_release section starts
+  local current_release_start = #lines
+  for i, line in ipairs(current_release) do
     table.insert(lines, line)
+    -- Register release lines with absolute line numbers (0-indexed)
+    if current_release_lines[i] then
+      ReleaseDetails.register_release_line(current_release_start + i - 1, current_release_lines[i])
+    end
+  end
+
+  -- Track where previous_releases section starts
+  local previous_releases_start = #lines
+  for i, line in ipairs(previous_releases) do
+    table.insert(lines, line)
+    -- Register release lines with absolute line numbers (0-indexed)
+    if previous_releases_lines[i] then
+      ReleaseDetails.register_release_line(previous_releases_start + i - 1, previous_releases_lines[i])
+    end
   end
 
   for _, line in ipairs(plugin_update_info) do

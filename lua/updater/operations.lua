@@ -324,6 +324,17 @@ function M.refresh(config, render_callback)
   }, render_callback)
 end
 
+-- Silent refresh that doesn't show spinner or status messages
+-- Used after version switch to reload state without UI interruption
+function M.refresh_silent(config, callback)
+  refresh_data(config, function()
+    Status.state.is_initial_load = false
+    if callback then
+      callback()
+    end
+  end)
+end
+
 function M.update_repo(config, render_callback)
   -- Block updates when pinned to a version
   if Status.is_pinned_to_version() then

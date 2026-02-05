@@ -16,7 +16,9 @@ local function execute_command_async(cmd, timeout_key, config, callback)
       if obj.code == Constants.TIMEOUT_EXIT_CODE then
         callback(nil, Errors.timeout_error("Command execution", timeout / 1000))
       elseif obj.code ~= 0 then
-        callback(nil, obj.stderr or "Command failed with exit code " .. obj.code)
+        -- stderr is redirected to stdout, so check stdout for error message
+        local err_msg = obj.stdout or obj.stderr or "Command failed with exit code " .. obj.code
+        callback(nil, vim.trim(err_msg))
       else
         callback(obj.stdout, nil)
       end
@@ -558,15 +560,21 @@ end
 
 -- Checkout a specific tag (creates detached HEAD)
 function M.checkout_tag(config, repo_path, tag_name, callback)
+  -- First, discard any lockfile changes that might block checkout
+  -- Then checkout the tag in a single command chain
+  local discard_lockfiles = "git checkout -- lazy-lock.json mason-lock.json 2>/dev/null || true"
+  local checkout_tag = "git checkout " .. vim.fn.shellescape(tag_name)
+  local combined_cmd = discard_lockfiles .. " && " .. checkout_tag
+
   M.execute_command(
-    "git checkout tags/" .. vim.fn.shellescape(tag_name),
+    combined_cmd,
     "default",
     "Git checkout tag",
     config,
     repo_path,
     function(result, err)
       if err then
-        callback(false, "Failed to checkout tag: " .. err)
+        callback(false, "Failed to checkout tag: " .. (err or "unknown error"))
       else
         callback(true, nil)
       end
@@ -575,14 +583,84 @@ function M.checkout_tag(config, repo_path, tag_name, callback)
 end
 
 -- Expose uncommitted changes check (already exists as local, make it public)
+-- Check if a file path is a lockfile that can be auto-discarded
+local function is_lockfile(filepath)
+  return filepath:match("lazy%-lock%.json$") or filepath:match("mason%-lock%.json$")
+end
+
+-- Parse git status porcelain output into list of changed files
+local function parse_status_files(status_output)
+  local files = {}
+  if not status_output or status_output == "" then
+    return files
+  end
+
+  for line in status_output:gmatch("[^\n]+") do
+    -- Porcelain format: XY filename (where XY is 2-char status)
+    local filepath = line:match("^.. (.+)$")
+    if filepath then
+      -- Handle renamed files (old -> new format)
+      local renamed = filepath:match("^.+ %-> (.+)$")
+      if renamed then
+        filepath = renamed
+      end
+      table.insert(files, filepath)
+    end
+  end
+  return files
+end
+
 function M.has_uncommitted_changes(config, repo_path, callback)
   M.execute_command("git status --porcelain", "status", "Git status", config, repo_path, function(result, err)
     if err then
       callback(nil, err)
+      return
+    end
+
+    local trimmed = result and vim.trim(result) or ""
+    if trimmed == "" then
+      -- No changes at all
+      callback(false, nil)
+      return
+    end
+
+    -- Parse the changed files
+    local changed_files = parse_status_files(trimmed)
+
+    -- Check if ALL changed files are lockfiles
+    local non_lockfile_changes = {}
+    local lockfile_changes = {}
+
+    for _, filepath in ipairs(changed_files) do
+      if is_lockfile(filepath) then
+        table.insert(lockfile_changes, filepath)
+      else
+        table.insert(non_lockfile_changes, filepath)
+      end
+    end
+
+    if #non_lockfile_changes > 0 then
+      -- There are non-lockfile changes, block the update
+      callback(true, nil)
+    elseif #lockfile_changes > 0 then
+      -- Only lockfile changes - discard them and proceed
+      local checkout_cmd = "git checkout --"
+      for _, filepath in ipairs(lockfile_changes) do
+        checkout_cmd = checkout_cmd .. " " .. vim.fn.shellescape(filepath)
+      end
+
+      M.execute_command(checkout_cmd, "checkout", "Discard lockfile changes", config, repo_path, function(_, checkout_err)
+        if checkout_err then
+          -- Failed to discard, treat as having changes
+          callback(true, nil)
+        else
+          -- Successfully discarded lockfile changes
+          callback(false, nil)
+        end
+      end)
     else
-      -- If output is non-empty, there are uncommitted changes
-      local has_changes = result and #vim.trim(result) > 0
-      callback(has_changes, nil)
+      -- No changes (shouldn't reach here, but handle it)
+      callback(false, nil)
     end
   end)
 end
@@ -866,6 +944,197 @@ function M.is_detached_head(config, repo_path, callback)
         return
       end
       callback(vim.trim(result or "") == "detached", nil)
+    end
+  )
+end
+
+-- Get the previous tag before a given tag (for diff comparison)
+function M.get_previous_tag(config, repo_path, tag, all_tags, callback)
+  if not tag or not all_tags then
+    callback(nil, nil)
+    return
+  end
+
+  local found_current = false
+  for _, t in ipairs(all_tags) do
+    if found_current then
+      callback(t, nil)
+      return
+    end
+    if t == tag then
+      found_current = true
+    end
+  end
+  callback(nil, nil) -- No previous tag found
+end
+
+-- Get release details for a tag
+function M.get_release_details(config, repo_path, tag, prev_tag, callback)
+  if not tag then
+    callback(nil, "No tag provided")
+    return
+  end
+
+  local details = {
+    tag = tag,
+    commit = nil,
+    date = nil,
+    url = nil,
+    title = nil,
+    description = nil,
+    lines_added = 0,
+    lines_deleted = 0,
+    lines_changed = 0,
+    plugin_changes = 0,
+    mason_changes = 0,
+  }
+
+  local pending = 5 -- Number of async operations
+  local function check_done()
+    pending = pending - 1
+    if pending == 0 then
+      callback(details, nil)
+    end
+  end
+
+  -- 1. Get tag commit hash
+  M.execute_command(
+    "git rev-list -n 1 " .. vim.fn.shellescape(tag),
+    "log",
+    "Git tag commit",
+    config,
+    repo_path,
+    function(result, _)
+      if result then
+        details.commit = vim.trim(result):sub(1, 7) -- Short hash
+      end
+      check_done()
+    end
+  )
+
+  -- 2. Get tag date
+  M.execute_command(
+    "git log -1 --format=%ai " .. vim.fn.shellescape(tag),
+    "log",
+    "Git tag date",
+    config,
+    repo_path,
+    function(result, _)
+      if result then
+        details.date = vim.trim(result):sub(1, 10) -- Just the date part YYYY-MM-DD
+      end
+      check_done()
+    end
+  )
+
+  -- 3. Get tag message (title and description)
+  M.execute_command(
+    "git tag -l --format='%(contents:subject)|%(contents:body)' " .. vim.fn.shellescape(tag),
+    "tag",
+    "Git tag message",
+    config,
+    repo_path,
+    function(result, _)
+      if result then
+        local parts = vim.split(result, "|", { plain = true })
+        details.title = vim.trim(parts[1] or "")
+        details.description = vim.trim(parts[2] or "")
+        -- Clean up empty values
+        if details.title == "" then
+          details.title = nil
+        end
+        if details.description == "" then
+          details.description = nil
+        end
+      end
+      check_done()
+    end
+  )
+
+  -- 4. Get diff stats (if prev_tag exists)
+  if prev_tag then
+    M.execute_command(
+      "git diff --shortstat " .. vim.fn.shellescape(prev_tag) .. ".." .. vim.fn.shellescape(tag),
+      "diff",
+      "Git diff stats",
+      config,
+      repo_path,
+      function(result, _)
+        if result then
+          -- Parse "X files changed, Y insertions(+), Z deletions(-)"
+          local added = result:match("(%d+) insertion")
+          local deleted = result:match("(%d+) deletion")
+          local changed = result:match("(%d+) file")
+          details.lines_added = tonumber(added) or 0
+          details.lines_deleted = tonumber(deleted) or 0
+          details.lines_changed = tonumber(changed) or 0
+        end
+        check_done()
+      end
+    )
+  else
+    check_done()
+  end
+
+  -- 5. Get plugin and mason lock changes (if prev_tag exists)
+  if prev_tag then
+    -- Get all file stats and filter for lockfiles
+    M.execute_command(
+      "git diff --numstat " .. vim.fn.shellescape(prev_tag) .. ".." .. vim.fn.shellescape(tag),
+      "diff",
+      "Git lockfile changes",
+      config,
+      repo_path,
+      function(result, _)
+        if result then
+          for line in result:gmatch("[^\n]+") do
+            local added, deleted, file = line:match("(%d+)%s+(%d+)%s+(.+)")
+            if file then
+              local changes = (tonumber(added) or 0) + (tonumber(deleted) or 0)
+              -- Check if this is a lazy lockfile (could be at any path)
+              if file:match("lazy%-lock%.json$") then
+                -- Each plugin change typically has 2 lines (old and new commit)
+                details.plugin_changes = math.floor(changes / 2)
+              -- Check if this is a mason lockfile
+              elseif file:match("mason%-lock%.json$") then
+                details.mason_changes = math.floor(changes / 2)
+              end
+            end
+          end
+        end
+        check_done()
+      end
+    )
+  else
+    check_done()
+  end
+
+  -- Construct GitHub URL
+  M.get_remote_url(config, repo_path, function(remote_url, _)
+    if remote_url then
+      -- Convert git URL to HTTPS URL for releases
+      local https_url = remote_url
+        :gsub("git@github%.com:", "https://github.com/")
+        :gsub("%.git$", "")
+      details.url = https_url .. "/releases/tag/" .. tag
+    end
+  end)
+end
+
+-- Get remote URL for the repo
+function M.get_remote_url(config, repo_path, callback)
+  M.execute_command(
+    "git remote get-url origin",
+    "remote",
+    "Git remote URL",
+    config,
+    repo_path,
+    function(result, err)
+      if err then
+        callback(nil, err)
+        return
+      end
+      callback(vim.trim(result or ""), nil)
     end
   )
 end

@@ -1,4 +1,7 @@
 local Constants = require("updater.constants")
+local Status = require("updater.status")
+local ReleaseDetails = require("updater.release_details")
+local Git = require("updater.git")
 local M = {}
 
 local function find_section_line(buffer, section_title_pattern)
@@ -343,15 +346,6 @@ end
 local function generate_release_branch_status(state, config)
   local lines = {}
 
-  -- Show current release prominently
-  local release_line = "  Current Release: "
-  if state.current_release then
-    release_line = release_line .. state.current_release
-  else
-    release_line = release_line .. "(no release)"
-  end
-  table.insert(lines, release_line)
-
   -- Show branch info with detached HEAD handling
   local branch_display = state.current_branch
   if state.is_detached_head or state.current_branch == "HEAD" then
@@ -386,6 +380,12 @@ local function generate_release_status_messages(state, config)
       hl_group = "WarningMsg",
     })
     return messages
+  elseif state.is_switching_version and state.switching_to_version then
+    table.insert(messages, {
+      text = "  " .. M.get_loading_spinner(state) .. " Switching to release " .. state.switching_to_version .. "...",
+      hl_group = "WarningMsg",
+    })
+    return messages
   elseif state.is_refreshing then
     table.insert(messages, {
       text = "  " .. M.get_loading_spinner(state) .. " Checking for new releases... Please wait.",
@@ -394,11 +394,41 @@ local function generate_release_status_messages(state, config)
     return messages
   end
 
+  -- Check if we just switched versions
+  if state.recently_switched_to then
+    -- Determine if this was an upgrade or downgrade
+    local action = "Updated"
+    if state.switched_from_version then
+      local cmp = Git.compare_version_tags(state.switched_from_version, state.recently_switched_to)
+      if cmp > 0 then
+        action = "Downgraded"
+      end
+    end
+    local prefix = "  " .. action .. " your neovim dotfiles to "
+    table.insert(messages, {
+      text = prefix .. state.recently_switched_to .. "!",
+      hl_group = "String",
+      -- Highlight the version in green
+      tag_start = #prefix,
+      tag_end = #prefix + #state.recently_switched_to,
+      tag_hl = "String",
+    })
+    table.insert(messages, {
+      text = "  ⚠️  Don't forget to restart neovim to reload the updates!",
+      hl_group = "WarningMsg",
+    })
+    return messages
+  end
+
   -- Check for new release
   if state.has_new_release and state.latest_remote_release then
+    local prefix = "  New release available!: "
     table.insert(messages, {
-      text = "  New release available: " .. state.latest_remote_release,
-      hl_group = "String",
+      text = prefix .. state.latest_remote_release,
+      hl_group = "WarningMsg", -- Yellow for the prefix
+      -- Special handling: highlight the tag portion in green
+      tag_start = #prefix,
+      tag_hl = "String",
     })
   else
     table.insert(messages, {
@@ -446,25 +476,40 @@ function M.generate_release_keybindings(state, config)
   local lines = { "  Keybindings:" }
   local keybind_data = {}
 
-  -- U - Update to latest release (when new release available)
-  if state.has_new_release then
-    table.insert(lines, "    " .. config.keymap.update_all .. " - Update to latest release")
-    table.insert(keybind_data, { key = config.keymap.update_all })
-  end
-
-  -- i - Install plugins (if plugin updates available)
-  if state.has_plugins_behind or state.has_plugins_ahead then
-    table.insert(lines, "    " .. config.keymap.install_plugins .. " - Sync plugins to release lockfile")
-    table.insert(keybind_data, { key = config.keymap.install_plugins })
-  end
+  -- q - Close (first)
+  table.insert(lines, "    " .. config.keymap.close .. " - Close window")
+  table.insert(keybind_data, { key = config.keymap.close })
 
   -- r - Refresh
   table.insert(lines, "    " .. config.keymap.refresh .. " - Check for new releases")
   table.insert(keybind_data, { key = config.keymap.refresh })
 
-  -- q - Close
-  table.insert(lines, "    " .. config.keymap.close .. " - Close window")
-  table.insert(keybind_data, { key = config.keymap.close })
+  -- Enter - Toggle release details
+  table.insert(lines, "    <CR> - Toggle release details")
+  table.insert(keybind_data, { key = "<CR>" })
+
+  -- s - Switch to release
+  table.insert(lines, "    s - Switch to release")
+  table.insert(keybind_data, { key = "s" })
+
+  -- y - Copy GitHub URL
+  table.insert(lines, "    y - Copy tag URL to clipboard")
+  table.insert(keybind_data, { key = "y" })
+
+  -- U - Update to latest release (always shown, but may be disabled)
+  local u_label = "Update to latest release"
+  -- Check if we're ahead of the latest release (on latest tag but with commits after it)
+  local is_on_latest_tag = state.current_release == state.latest_remote_release
+  local has_commits_after_tag = (state.commits_since_release or 0) > 0
+  local is_ahead_of_latest = is_on_latest_tag and has_commits_after_tag
+
+  if is_ahead_of_latest then
+    u_label = u_label .. " (disabled, ahead of latest release)"
+  elseif not state.has_new_release then
+    u_label = u_label .. " (disabled, already on latest release)"
+  end
+  table.insert(lines, "    " .. config.keymap.update_all .. " - " .. u_label)
+  table.insert(keybind_data, { key = config.keymap.update_all })
 
   table.insert(lines, "")
 
@@ -492,57 +537,90 @@ function M.generate_commits_since_release_section(state, config)
       table.insert(lines, line)
     end
 
-    -- Show the release commit at the bottom (with green tag before the message)
-    if state.release_commit then
-      local rc = state.release_commit
-      local tag = rc.tag or state.current_release
-      local line = "    " .. rc.hash .. " - [" .. tag .. "] " .. rc.message
-      table.insert(lines, line)
-    end
-
     table.insert(lines, "  ")
   end
 
   return lines
 end
 
-function M.generate_releases_since_section(state, config)
+-- Generate current release section (always shown if we have a current release)
+-- Returns: lines table, release_lines table (maps relative line index to tag)
+function M.generate_current_release_section(state, config)
   local lines = {}
-  local releases_since = state.releases_since_current or {}
+  local release_lines = {} -- relative line index -> tag
 
-  -- Show if there are newer releases available
-  if #releases_since > 0 then
-    table.insert(lines, "  Releases since " .. (state.current_release or "current") .. ":")
+  if state.current_release then
+    table.insert(lines, "  Current release:")
     table.insert(lines, "  " .. Constants.SEPARATOR_LINE)
 
-    -- Show newer releases (newest first, reversed so current is at bottom)
-    -- releases_since is already sorted newest first, show them in that order
-    for _, release in ipairs(releases_since) do
-      local line = "    " .. release.hash .. " - [" .. release.tag .. "] " .. release.message
-      table.insert(lines, line)
+    -- Show current release
+    local is_expanded = Status.is_release_expanded(state.current_release)
+    local indicator = is_expanded and "▼ " or "▶ "
+    local current_line = "  " .. indicator .. state.current_release
+    local current_hash = nil
+    local current_message = nil
+    if state.release_commit then
+      local rc = state.release_commit
+      current_hash = rc.hash
+      current_message = rc.message
     end
+    table.insert(lines, current_line)
+    release_lines[#lines] = state.current_release
 
-    -- Show current release at the bottom
-    if state.current_release then
-      local current_line = "  → "
-      if state.release_commit then
-        local rc = state.release_commit
-        current_line = current_line .. rc.hash .. " - [" .. state.current_release .. "] " .. rc.message .. " (current)"
-      else
-        -- Fallback if we don't have commit info
-        current_line = current_line .. "[" .. state.current_release .. "] (current)"
+    -- Add expanded details for current release
+    if is_expanded then
+      local detail_lines = ReleaseDetails.generate_detail_lines(state.current_release, "      ", current_hash, current_message)
+      for _, detail_line in ipairs(detail_lines) do
+        table.insert(lines, detail_line)
       end
-      table.insert(lines, current_line)
     end
 
     table.insert(lines, "  ")
   end
 
-  return lines
+  return lines, release_lines
 end
 
+-- Generate releases since section (only releases newer than current)
+-- Returns: lines table, release_lines table (maps relative line index to tag)
+function M.generate_releases_since_section(state, config)
+  local lines = {}
+  local release_lines = {} -- relative line index -> tag
+  local releases_since = state.releases_since_current or {}
+
+  -- Only show if there are newer releases
+  if state.current_release and #releases_since > 0 then
+    table.insert(lines, "  Releases since " .. state.current_release .. ":")
+    table.insert(lines, "  " .. Constants.SEPARATOR_LINE)
+
+    -- Show newer releases (newest first)
+    for _, release in ipairs(releases_since) do
+      local is_expanded = Status.is_release_expanded(release.tag)
+      local indicator = is_expanded and "▼ " or "▶ "
+      local line = "  " .. indicator .. release.tag
+      table.insert(lines, line)
+      release_lines[#lines] = release.tag
+
+      -- Add expanded details if this release is expanded
+      if is_expanded then
+        local detail_lines = ReleaseDetails.generate_detail_lines(release.tag, "      ", release.hash, release.message)
+        for _, detail_line in ipairs(detail_lines) do
+          table.insert(lines, detail_line)
+        end
+      end
+    end
+
+    table.insert(lines, "  ")
+  end
+
+  return lines, release_lines
+end
+
+-- Generate previous releases section with expansion support
+-- Returns: lines table, release_lines table (maps relative line index to tag)
 function M.generate_previous_releases_section(state, config)
   local lines = {}
+  local release_lines = {} -- relative line index -> tag
   local releases_before = state.releases_before_current or {}
 
   -- Show if there are older releases
@@ -555,8 +633,19 @@ function M.generate_previous_releases_section(state, config)
     local count = math.min(#releases_before, max_items)
     for i = 1, count do
       local release = releases_before[i]
-      local line = "    " .. release.hash .. " - [" .. release.tag .. "] " .. release.message
+      local is_expanded = Status.is_release_expanded(release.tag)
+      local indicator = is_expanded and "▼ " or "▶ "
+      local line = "  " .. indicator .. release.tag
       table.insert(lines, line)
+      release_lines[#lines] = release.tag
+
+      -- Add expanded details if this release is expanded
+      if is_expanded then
+        local detail_lines = ReleaseDetails.generate_detail_lines(release.tag, "      ", release.hash, release.message)
+        for _, detail_line in ipairs(detail_lines) do
+          table.insert(lines, detail_line)
+        end
+      end
     end
 
     -- Show ellipsis if there are more releases
@@ -567,7 +656,7 @@ function M.generate_previous_releases_section(state, config)
     table.insert(lines, "  ")
   end
 
-  return lines
+  return lines, release_lines
 end
 
 function M.generate_loading_state(state, config)
@@ -623,7 +712,16 @@ end
 local function highlight_status(buffer, ns_id, status_messages, status_lines_start)
   for i, msg in ipairs(status_messages) do
     local line_num = status_lines_start + i - 1
-    add_highlight(buffer, ns_id, msg.hl_group, line_num, 2, -1)
+
+    if msg.tag_start and msg.tag_hl then
+      -- Special case: split highlighting (e.g., "New release available: v1.2.0")
+      -- First part in msg.hl_group, tag part in msg.tag_hl
+      add_highlight(buffer, ns_id, msg.hl_group, line_num, 2, msg.tag_start)
+      add_highlight(buffer, ns_id, msg.tag_hl, line_num, msg.tag_start, -1)
+    else
+      -- Normal case: single highlight for the whole line
+      add_highlight(buffer, ns_id, msg.hl_group, line_num, 2, -1)
+    end
   end
 end
 
@@ -631,6 +729,15 @@ local function highlight_keybindings(buffer, ns_id, keybindings_start, keybind_d
   for i, data in ipairs(keybind_data) do
     local line_num = keybindings_start + i - 1
     add_highlight(buffer, ns_id, "Statement", line_num, 4, 4 + #data.key)
+
+    -- Check for "(disabled, ...)" text and highlight it as Comment
+    local line = vim.api.nvim_buf_get_lines(buffer, line_num, line_num + 1, false)
+    if line and line[1] then
+      local disabled_start = line[1]:find("%(disabled,")
+      if disabled_start then
+        add_highlight(buffer, ns_id, "Comment", line_num, disabled_start - 1, -1)
+      end
+    end
   end
 end
 
@@ -792,14 +899,8 @@ end
 
 -- Highlighting for release-focused UI
 local function highlight_release_header(buffer, ns_id, state)
-  -- Line 1: Current Release
-  add_highlight(buffer, ns_id, "Title", 1, 2, 19) -- "Current Release:"
-  if state.current_release then
-    add_highlight(buffer, ns_id, "String", 1, 19, -1) -- Release tag in green
-  end
-
-  -- Line 2: Branch
-  add_highlight(buffer, ns_id, "Directory", 2, 2, -1)
+  -- Line 1: Branch (now the only header line)
+  add_highlight(buffer, ns_id, "Directory", 1, 2, -1)
 end
 
 local function highlight_commits_since_release(buffer, ns_id, state)
@@ -847,29 +948,141 @@ local function highlight_commits_since_release(buffer, ns_id, state)
     end
   end
 
-  -- Highlight the release commit line (last line before the empty line)
-  if state.release_commit then
-    local release_line_num = commit_start_line + #commits_list
-    local line = vim.api.nvim_buf_get_lines(buffer, release_line_num, release_line_num + 1, false)
-    if #line > 0 and line[1] then
-      local rc = state.release_commit
-      local tag = rc.tag or state.current_release
+end
 
-      -- Format: "    hash - [tag] message"
-      -- Hash starts at position 4 (after "    ")
-      local hash_start = 4
-      local hash_end = hash_start + #rc.hash
+-- Helper to highlight a release line with fold indicator
+-- tag_hl_group: highlight group for the tag (e.g., "Normal", "String", "Directory")
+local function highlight_release_line_with_indicator(buffer, ns_id, line_num, release, tag_hl_group)
+  local line = vim.api.nvim_buf_get_lines(buffer, line_num, line_num + 1, false)
+  if not line or not line[1] then
+    return
+  end
 
-      -- Tag starts after "hash - [" = hash_end + 4
-      local tag_bracket_start = hash_end + 3  -- " - ["
-      local tag_bracket_end = tag_bracket_start + #tag + 2  -- includes []
+  local content = line[1]
 
-      -- Highlight hash in yellow
-      add_highlight(buffer, ns_id, "WarningMsg", release_line_num, hash_start, hash_end)
+  -- Find the fold indicator (▶ or ▼) - these are 3 bytes each in UTF-8
+  local indicator_start = content:find("[▶▼]")
+  if not indicator_start then
+    return
+  end
 
-      -- Highlight tag in green (including brackets)
-      add_highlight(buffer, ns_id, "String", release_line_num, tag_bracket_start, tag_bracket_end)
+  -- Highlight fold indicator
+  local is_expanded = Status.is_release_expanded(release.tag)
+  add_highlight(buffer, ns_id, is_expanded and "Special" or "Comment", line_num, indicator_start - 1, indicator_start + 2)
+
+  -- Find and highlight tag (directly after indicator, before any space or end of line)
+  -- The indicator is 3 bytes (UTF-8) + 1 space, then the tag starts
+  local tag_start = indicator_start + 4 -- After "▶ " (3 bytes + 1 space)
+  local tag_end = content:find(" ", tag_start) or #content + 1
+  add_highlight(buffer, ns_id, tag_hl_group or "Normal", line_num, tag_start - 1, tag_end - 1)
+end
+
+-- Helper to highlight expanded detail lines
+local function highlight_detail_lines(buffer, ns_id, start_line, tag)
+  local details = Status.get_release_details(tag)
+  if not details then
+    return 0
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(buffer)
+  local lines_highlighted = 0
+
+  for i = start_line, line_count - 1 do
+    local line = vim.api.nvim_buf_get_lines(buffer, i, i + 1, false)
+    if not line or not line[1] then
+      break
     end
+
+    local content = line[1]
+
+    -- Check if this is still a detail line (starts with spaces, has a label:)
+    if not content:match("^%s+%S+:") then
+      -- Not a detail line anymore, stop
+      break
+    end
+
+    lines_highlighted = lines_highlighted + 1
+
+    -- Highlight the label (before the colon)
+    local label_end = content:find(":")
+    if label_end then
+      add_highlight(buffer, ns_id, "Comment", i, 0, label_end)
+
+      -- Extract the label to check for special handling
+      local label = content:match("^%s*(%S+):")
+
+      -- Special highlighting for specific values
+      local value = content:sub(label_end + 1):match("^%s*(.+)")
+      if value then
+        local value_start = content:find(value, label_end + 1, true)
+        if value_start then
+          -- Highlight commit hash in yellow (just the hash part, not the message)
+          if label == "commit" then
+            -- Format is "hash - message" or just "hash"
+            local hash_end = value:find(" %-")
+            if hash_end then
+              -- Highlight just the hash
+              add_highlight(buffer, ns_id, "WarningMsg", i, value_start - 1, value_start + hash_end - 2)
+            else
+              -- No message, highlight the whole value
+              add_highlight(buffer, ns_id, "WarningMsg", i, value_start - 1, -1)
+            end
+          -- Highlight date: the parenthesized portion (MM-DD-YY) in Comment
+          elseif label == "date" then
+            local paren_start = value:find("%(")
+            if paren_start then
+              add_highlight(buffer, ns_id, "Comment", i, value_start + paren_start - 2, -1)
+            end
+          -- Highlight URLs as links
+          elseif value:match("^https?://") then
+            add_highlight(buffer, ns_id, "Underlined", i, value_start - 1, -1)
+          -- Highlight +X/-Y stats with colors
+          elseif value:match("^%+%d+/%-") then
+            local plus_end = value:find("/")
+            if plus_end then
+              add_highlight(buffer, ns_id, "DiffAdd", i, value_start - 1, value_start + plus_end - 2)
+              local minus_start = value:find("%-", plus_end)
+              if minus_start then
+                local minus_end = value:find(" ", minus_start) or #value + 1
+                add_highlight(buffer, ns_id, "DiffDelete", i, value_start + minus_start - 2, value_start + minus_end - 2)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  return lines_highlighted
+end
+
+function M.highlight_current_release(buffer, ns_id, state)
+  if not state.current_release then
+    return
+  end
+
+  local section_line = find_section_line(buffer, "Current release:")
+  if not section_line then
+    return
+  end
+
+  -- Highlight section title
+  add_highlight(buffer, ns_id, "Title", section_line, 2, -1)
+
+  -- Start after title and separator
+  local current_line = section_line + 2
+
+  -- Highlight the current release line in blue (Directory) like the branch line
+  local current_release_obj = {
+    tag = state.current_release,
+    hash = state.release_commit and state.release_commit.hash or nil,
+  }
+  highlight_release_line_with_indicator(buffer, ns_id, current_line, current_release_obj, "Directory")
+  current_line = current_line + 1
+
+  -- If current release is expanded, highlight its details
+  if Status.is_release_expanded(state.current_release) then
+    highlight_detail_lines(buffer, ns_id, current_line, state.current_release)
   end
 end
 
@@ -890,69 +1103,34 @@ function M.highlight_releases_since(buffer, ns_id, state)
     return
   end
 
-  -- Highlight section title
-  add_highlight(buffer, ns_id, "Title", section_line, 2, -1)
+  -- Highlight section title, with the current release tag in blue (Directory)
+  local prefix = "  Releases since "
+  local tag_start = #prefix
+  local tag_end = tag_start + #state.current_release
+  add_highlight(buffer, ns_id, "Title", section_line, 2, tag_start)
+  add_highlight(buffer, ns_id, "Directory", section_line, tag_start, tag_end)
+  add_highlight(buffer, ns_id, "Title", section_line, tag_end, -1)
 
   -- Start after title and separator
-  local release_start_line = section_line + 2
+  local current_line = section_line + 2
 
-  -- Highlight each release line
-  -- Format: "    hash - [tag] message"
+  -- Highlight each release line and its expanded details
+  -- First release (index 1) is the latest - highlight in green
+  -- All others are white (Normal)
   for i, release in ipairs(releases_since) do
-    local line_num = release_start_line + i - 1
-    local line = vim.api.nvim_buf_get_lines(buffer, line_num, line_num + 1, false)
-    if #line > 0 and line[1] then
-      -- Hash starts at position 4 (after "    ")
-      local hash_start = 4
-      local hash_end = hash_start + #release.hash
+    local tag_hl = (i == 1) and "String" or "Normal"
+    highlight_release_line_with_indicator(buffer, ns_id, current_line, release, tag_hl)
+    current_line = current_line + 1
 
-      -- Tag starts after "hash - [" = hash_end + 4
-      local tag_bracket_start = hash_end + 3  -- " - ["
-      local tag_bracket_end = tag_bracket_start + #release.tag + 2  -- includes []
-
-      -- Highlight hash in yellow
-      add_highlight(buffer, ns_id, "WarningMsg", line_num, hash_start, hash_end)
-
-      -- Highlight tag in green (including brackets)
-      add_highlight(buffer, ns_id, "String", line_num, tag_bracket_start, tag_bracket_end)
-    end
-  end
-
-  -- Highlight the current release line (with arrow indicator)
-  if state.release_commit then
-    local current_line_num = release_start_line + #releases_since
-    local line = vim.api.nvim_buf_get_lines(buffer, current_line_num, current_line_num + 1, false)
-    if #line > 0 and line[1] then
-      local rc = state.release_commit
-
-      -- Format: "  → hash - [tag] message (current)"
-      -- Arrow indicator
-      add_highlight(buffer, ns_id, "String", current_line_num, 2, 4)
-
-      -- Hash starts after "  → " (position 4 + 2 for arrow width)
-      local hash_start = 4 + 2
-      local hash_end = hash_start + #rc.hash
-
-      -- Tag bracket position
-      local tag_bracket_start = hash_end + 3  -- " - ["
-      local tag_bracket_end = tag_bracket_start + #state.current_release + 2
-
-      -- Highlight hash in yellow
-      add_highlight(buffer, ns_id, "WarningMsg", current_line_num, hash_start, hash_end)
-
-      -- Highlight tag in green
-      add_highlight(buffer, ns_id, "String", current_line_num, tag_bracket_start, tag_bracket_end)
-
-      -- Highlight "(current)" at the end
-      local current_text = line[1]
-      local current_start = current_text:find("%(current%)")
-      if current_start then
-        add_highlight(buffer, ns_id, "Comment", current_line_num, current_start - 1, -1)
-      end
+    -- If expanded, highlight detail lines
+    if Status.is_release_expanded(release.tag) then
+      local detail_count = highlight_detail_lines(buffer, ns_id, current_line, release.tag)
+      current_line = current_line + detail_count
     end
   end
 end
 
+-- Legacy function kept for compatibility but now uses dynamic line detection
 function M.highlight_previous_releases(buffer, ns_id, state)
   local releases_before = state.releases_before_current or {}
   if #releases_before == 0 then
@@ -970,37 +1148,26 @@ function M.highlight_previous_releases(buffer, ns_id, state)
   add_highlight(buffer, ns_id, "Title", section_line, 2, -1)
 
   -- Start after title and separator
-  local release_start_line = section_line + 2
+  local current_line = section_line + 2
 
-  -- Highlight each release line
-  -- Format: "    hash - [tag] message"
+  -- Highlight each release line and its expanded details (all white/Normal)
   local max_items = Constants.MAX_SECTION_ITEMS
   local count = math.min(#releases_before, max_items)
   for i = 1, count do
     local release = releases_before[i]
-    local line_num = release_start_line + i - 1
-    local line = vim.api.nvim_buf_get_lines(buffer, line_num, line_num + 1, false)
-    if #line > 0 and line[1] then
-      -- Hash starts at position 4 (after "    ")
-      local hash_start = 4
-      local hash_end = hash_start + #release.hash
+    highlight_release_line_with_indicator(buffer, ns_id, current_line, release, "Normal")
+    current_line = current_line + 1
 
-      -- Tag starts after "hash - [" = hash_end + 4
-      local tag_bracket_start = hash_end + 3  -- " - ["
-      local tag_bracket_end = tag_bracket_start + #release.tag + 2  -- includes []
-
-      -- Highlight hash in yellow
-      add_highlight(buffer, ns_id, "WarningMsg", line_num, hash_start, hash_end)
-
-      -- Highlight tag in green (including brackets)
-      add_highlight(buffer, ns_id, "String", line_num, tag_bracket_start, tag_bracket_end)
+    -- If expanded, highlight detail lines
+    if Status.is_release_expanded(release.tag) then
+      local detail_count = highlight_detail_lines(buffer, ns_id, current_line, release.tag)
+      current_line = current_line + detail_count
     end
   end
 
   -- Highlight the "... and X more" line if present
   if #releases_before > max_items then
-    local more_line_num = release_start_line + count
-    add_highlight(buffer, ns_id, "Comment", more_line_num, 4, -1)
+    add_highlight(buffer, ns_id, "Comment", current_line, 4, -1)
   end
 end
 
@@ -1021,6 +1188,7 @@ function M.apply_release_highlighting(
   highlight_keybindings(state.buffer, ns_id, keybindings_start, keybind_data)
   highlight_restart_reminder(state.buffer, ns_id, state, restart_reminder_line)
   highlight_commits_since_release(state.buffer, ns_id, state)
+  M.highlight_current_release(state.buffer, ns_id, state)
   M.highlight_releases_since(state.buffer, ns_id, state)
   M.highlight_previous_releases(state.buffer, ns_id, state)
   highlight_plugin_updates(state.buffer, ns_id, state)

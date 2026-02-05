@@ -10,7 +10,7 @@ describe("status module", function()
     Status.state.is_updating = false
     Status.state.is_refreshing = false
     Status.state.is_installing_plugins = false
-    Status.state.current_branch = "unknown"
+    Status.state.current_branch = "Loading..."
     Status.state.current_commit = nil
     Status.state.ahead_count = 0
     Status.state.behind_count = 0
