@@ -17,8 +17,8 @@ return {
   cmd = {
     "UpdaterOpen",
     "UpdaterCheck",
-    "UpdaterStartChecking",
-    "UpdaterStopChecking",
+    "UpdaterStartChecking", -- DEPRECATED
+    "UpdaterStopChecking", -- DEPRECATED
     "UpdaterHealth",
   },
   config = function(_, opts)

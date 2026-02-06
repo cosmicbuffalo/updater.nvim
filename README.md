@@ -9,8 +9,7 @@ A Neovim plugin for managing your dotfiles repository with semantic versioning. 
 - 🛠️ **Mason Tool Sync** - Restore mason tools from `mason-lock.json` (if mason-lock.nvim is installed)
 - 📋 **Release Notes** - View GitHub release titles and notes directly in Neovim
 - 🎨 **Visual TUI** - Browse releases, view changelogs, and switch versions with a simple interface
-- ⬆️ **Upgrade/Downgrade Detection** - Clear indication when switching to newer or older versions
-- 🔔 **Update Notifications** - Get notified when new releases are available
+- 🔔 **Update Notifications** - Get notified when a new release is available
 - 🏥 **Health Checks** - Built-in diagnostics via `:checkhealth updater`
 
 ## Installation
@@ -21,19 +20,10 @@ A Neovim plugin for managing your dotfiles repository with semantic versioning. 
 {
     "cosmicbuffalo/updater.nvim",
     opts = {
-        repo_path = vim.fn.stdpath("config"),
         versioned_releases_only = true,  -- Recommended: use release-based updates
     },
 }
 ```
-
-> **Important:** Disable lazy.nvim's automatic update checker to let updater.nvim manage your plugin versions:
-> ```lua
-> require("lazy").setup({
->     spec = { ... },
->     checker = { enabled = false },  -- Disable auto-update checking
-> })
-> ```
 
 ## Quick Start
 
@@ -61,25 +51,24 @@ A Neovim plugin for managing your dotfiles repository with semantic versioning. 
 
 ### What Happens When You Switch Versions
 
-1. **Safety Check** - Verifies no uncommitted changes exist
+1. **Safety Check** - Verifies no uncommitted changes exist (ignoring lazy/mason lockfiles)
 2. **Git Checkout** - Checks out the specified tag (detached HEAD)
 3. **Plugin Restore** - Runs `lazy.restore()` to sync plugins with `lazy-lock.json`
 4. **Mason Restore** - Runs `mason-lock.restore()` if mason-lock.nvim is installed
 5. **State Update** - Updates the TUI to reflect the new version
 
-### Version Modes
-
-- **Latest Mode** - Follow the newest release tag, get notified of new releases
-- **Pinned Mode** - Stay on a specific version, updates are blocked until you switch
+> [!IMPORTANT]
+> Switching your dotfiles version still requires you to close and reopen neovim to load all the updates!
 
 ## Configuration
 
 ```lua
 require("updater").setup({
-    -- Path to your dotfiles repository
+    -- Path to your dotfiles repository (optional, will use default config path)
     repo_path = vim.fn.stdpath("config"),
 
     -- RECOMMENDED: Enable release-based version management
+    -- versioned_releases_only mode will become the only mode in a future release!
     versioned_releases_only = true,
 
     -- Pattern for version tags (default matches v1.0.0, v2.1.3, etc.)
@@ -91,7 +80,7 @@ require("updater").setup({
     -- Window title
     title = "Neovim Dotfiles Updater",
 
-    -- Keybindings
+    -- Keybindings -- DEPRECATED, will be removed in a future release
     keymap = {
         open = "<leader>e",       -- Open the updater TUI
         update = "u",             -- Update to selected version
@@ -106,7 +95,7 @@ require("updater").setup({
         enabled = true,
     },
 
-    -- Periodic background checks
+    -- Periodic background checks -- DEPRECATED, will be removed in a future release
     periodic_check = {
         enabled = true,
         frequency_minutes = 20,
@@ -156,8 +145,8 @@ When `versioned_releases_only = true`:
 | `:DotfilesVersion <tag>` | Switch to a specific version |
 | `:DotfilesVersion latest` | Switch to the latest release |
 | `:UpdaterCheck` | Check for updates (shows notification) |
-| `:UpdaterStartChecking` | Start periodic update checking |
-| `:UpdaterStopChecking` | Stop periodic update checking |
+| `:UpdaterStartChecking` | Start periodic update checking DEPRECATED|
+| `:UpdaterStopChecking` | Stop periodic update checking DEPRECATED|
 | `:checkhealth updater` | Run health diagnostics |
 
 ## GitHub Release Integration
@@ -173,6 +162,9 @@ For public repositories, `curl` can be used as a fallback (without authenticatio
 Run `:checkhealth updater` to verify your GitHub API access.
 
 ## Lualine Integration
+
+> [!WARNING]
+> The API for this lualine integration is deprecated and will be removed in a future release
 
 Display update status in your statusline:
 
@@ -249,7 +241,7 @@ Run `:checkhealth updater` to diagnose common issues:
 - lazy.nvim integration
 - fidget.nvim integration
 
-## Debug Mode
+## Debug Mode -- DEPRECATED
 
 For testing without making git changes:
 
@@ -261,7 +253,7 @@ For testing without making git changes:
 
 ---
 
-## Deprecated: Legacy Mode
+## DEPRECATED: Legacy Mode
 
 > **Deprecation Notice:** The legacy update mode (`versioned_releases_only = false`) is deprecated and will be removed in a future release. Please migrate to versioned releases mode.
 

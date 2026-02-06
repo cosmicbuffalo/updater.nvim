@@ -94,6 +94,7 @@ function M.has_cached_data()
   return state.last_check_time ~= nil
 end
 
+-- DEPRECATED - planning to remove in future release and replace with new semantic versioning-based lualine integration
 function M.has_updates()
   return state.needs_update or state.has_plugin_updates or state.has_plugins_behind or state.has_plugins_ahead
 end

@@ -226,11 +226,13 @@ function M.check_updates()
   end)
 end
 
+-- DEPRECATED
 function M.start_periodic_check()
   Periodic.stop_periodic_check()
   Periodic.setup_periodic_check(config)
 end
 
+-- DEPRECATED
 function M.stop_periodic_check()
   Periodic.stop_periodic_check()
 end
