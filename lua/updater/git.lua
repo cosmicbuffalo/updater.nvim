@@ -1,10 +1,12 @@
 local Constants = require("updater.constants")
 local Errors = require("updater.errors")
+local Config = require("updater.config")
 local M = {}
 
 local validation_cache = {}
 
-local function execute_command_async(cmd, timeout_key, config, callback)
+local function execute_command_async(cmd, timeout_key, callback)
+  local config = Config.get()
   timeout_key = timeout_key or "default"
   local timeout = (config.timeouts[timeout_key] or config.timeouts.default) * 1000 -- Convert to ms
 
@@ -14,7 +16,7 @@ local function execute_command_async(cmd, timeout_key, config, callback)
   }, function(obj)
     vim.schedule(function()
       if obj.code == Constants.TIMEOUT_EXIT_CODE then
-        callback(nil, Errors.timeout_error("Command execution", timeout / 1000))
+        callback(nil, "Command execution timed out after " .. (timeout / 1000) .. " seconds")
       elseif obj.code ~= 0 then
         -- stderr is redirected to stdout, so check stdout for error message
         local err_msg = obj.stdout or obj.stderr or "Command failed with exit code " .. obj.code
@@ -26,14 +28,27 @@ local function execute_command_async(cmd, timeout_key, config, callback)
   end)
 end
 
-function M.execute_command(git_cmd, timeout_key, operation_name, config, repo_path, callback)
-  local cd_cmd = "cd " .. vim.fn.shellescape(repo_path) .. " && "
-  local full_cmd = cd_cmd .. git_cmd
+-- Execute a git command asynchronously
+-- @param cmd string: The git command to execute
+-- @param opts table: Options table with:
+--   callback (required): function(result, err) called on completion
+--   timeout_key (optional, default "default"): Key into config.timeouts
+--   operation_name (optional, default "Git operation"): Name for error messages
+function M.execute_command(cmd, opts)
+  opts = opts or {}
+  local config = Config.get()
+  local repo_path = config.repo_path
+  local callback = opts.callback
+  local timeout_key = opts.timeout_key or "default"
+  local operation_name = opts.operation_name or "Git operation"
 
-  execute_command_async(full_cmd, timeout_key, config, function(result, err)
+  local cd_cmd = "cd " .. vim.fn.shellescape(repo_path) .. " && "
+  local full_cmd = cd_cmd .. cmd
+
+  execute_command_async(full_cmd, timeout_key, function(result, err)
     if err then
       if err:match("timed out") then
-        Errors.notify_error(err, config, operation_name or "Git operation")
+        Errors.notify_error(err, operation_name)
       end
       callback(nil, err)
     else
@@ -85,31 +100,34 @@ local function parse_commits_from_output(result)
   return commits
 end
 
-function M.get_current_commit(config, repo_path, callback)
-  M.execute_command("git rev-parse HEAD", "status", "Git status check", config, repo_path, function(result, err)
-    callback(result, err)
-  end)
+function M.get_current_commit(callback)
+  M.execute_command("git rev-parse HEAD", {
+    timeout_key = "status",
+    operation_name = "Git status check",
+    callback = function(result, err)
+      callback(result, err)
+    end,
+  })
 end
 
-local function get_current_branch(config, repo_path, callback)
-  if not config or not repo_path then
+local function get_current_branch(callback)
+  local config = Config.get()
+  if not config or not config.repo_path then
     callback("unknown", nil)
     return
   end
-  M.execute_command(
-    "git rev-parse --abbrev-ref HEAD",
-    "status",
-    "Git branch check",
-    config,
-    repo_path,
-    function(result, err)
+  M.execute_command("git rev-parse --abbrev-ref HEAD", {
+    timeout_key = "status",
+    operation_name = "Git branch check",
+    callback = function(result, err)
       callback(result or "unknown", err)
-    end
-  )
+    end,
+  })
 end
 
-function M.get_ahead_behind_count(config, repo_path, branch, callback)
-  if not config or not repo_path or not config.main_branch then
+function M.get_ahead_behind_count(branch, callback)
+  local config = Config.get()
+  if not config or not config.repo_path or not config.main_branch then
     callback(0, 0, nil)
     return
   end
@@ -117,13 +135,10 @@ function M.get_ahead_behind_count(config, repo_path, branch, callback)
   local main = config.main_branch
   local compare_with = "origin/" .. main
 
-  M.execute_command(
-    "git rev-list --left-right --count " .. branch .. "..." .. compare_with,
-    "status",
-    "Git count operation",
-    config,
-    repo_path,
-    function(result, err)
+  M.execute_command("git rev-list --left-right --count " .. branch .. "..." .. compare_with, {
+    timeout_key = "status",
+    operation_name = "Git count operation",
+    callback = function(result, err)
       if not result then
         callback(0, 0, err)
         return
@@ -131,24 +146,22 @@ function M.get_ahead_behind_count(config, repo_path, branch, callback)
 
       local ahead, behind = result:match("(%d+)%s+(%d+)")
       callback(tonumber(ahead) or 0, tonumber(behind) or 0, nil)
-    end
-  )
+    end,
+  })
 end
 
-local function is_commit_in_branch(commit_hash, branch, config, repo_path, callback)
-  M.execute_command(
-    "git branch --contains " .. commit_hash .. " | grep -q " .. branch .. " && echo yes || echo no",
-    "status",
-    "Git branch check",
-    config,
-    repo_path,
-    function(result, err)
+local function is_commit_in_branch(commit_hash, branch, callback)
+  M.execute_command("git branch --contains " .. commit_hash .. " | grep -q " .. branch .. " && echo yes || echo no", {
+    timeout_key = "status",
+    operation_name = "Git branch check",
+    callback = function(result, err)
       callback(result == "yes", err)
-    end
-  )
+    end,
+  })
 end
 
-function M.get_commit_log(config, repo_path, current_branch, ahead_count, behind_count, callback)
+function M.get_commit_log(current_branch, ahead_count, behind_count, callback)
+  local config = Config.get()
   local main = config.main_branch
   local log_format = string.format('--format=format:"%%h|%%s|%%an|%%ar" -n %d', config.log_count)
   local git_cmd
@@ -172,17 +185,22 @@ function M.get_commit_log(config, repo_path, current_branch, ahead_count, behind
     end
   end
 
-  M.execute_command(git_cmd, "log", "Git log operation", config, repo_path, function(result, err)
-    if not result then
-      callback({}, log_type, err)
-      return
-    end
+  M.execute_command(git_cmd, {
+    timeout_key = "log",
+    operation_name = "Git log operation",
+    callback = function(result, err)
+      if not result then
+        callback({}, log_type, err)
+        return
+      end
 
-    callback(parse_commits_from_output(result), log_type, nil)
-  end)
+      callback(parse_commits_from_output(result), log_type, nil)
+    end,
+  })
 end
 
-function M.get_remote_commits_not_in_local(config, repo_path, current_branch, callback)
+function M.get_remote_commits_not_in_local(current_branch, callback)
+  local config = Config.get()
   local main = config.main_branch
   local compare_with = "origin/" .. main
 
@@ -193,64 +211,80 @@ function M.get_remote_commits_not_in_local(config, repo_path, current_branch, ca
     current_branch
   )
 
-  M.execute_command(git_cmd, "log", "Git log operation", config, repo_path, function(result, err)
-    if not result then
-      callback({}, err)
-      return
-    end
+  M.execute_command(git_cmd, {
+    timeout_key = "log",
+    operation_name = "Git log operation",
+    callback = function(result, err)
+      if not result then
+        callback({}, err)
+        return
+      end
 
-    callback(parse_commits_from_output(result), nil)
-  end)
+      callback(parse_commits_from_output(result), nil)
+    end,
+  })
 end
 
-function M.get_repo_status(config, repo_path, callback)
-  M.execute_command("git fetch", "fetch", "Git fetch operation", config, repo_path, function(_, fetch_err)
-    if fetch_err then
-      callback({ error = true })
-      return
-    end
+function M.get_repo_status(callback)
+  local config = Config.get()
+  M.execute_command("git fetch", {
+    timeout_key = "fetch",
+    operation_name = "Git fetch operation",
+    callback = function(_, fetch_err)
+      if fetch_err then
+        callback({ error = true })
+        return
+      end
 
-    get_current_branch(config, repo_path, function(branch, _)
-      M.get_ahead_behind_count(config, repo_path, branch, function(ahead, behind, _)
-        callback({
-          branch = branch,
-          ahead = ahead,
-          behind = behind,
-          is_main = branch == config.main_branch,
-          error = false,
-          up_to_date = behind == 0,
-          has_local_changes = ahead > 0,
-        })
+      get_current_branch(function(branch, _)
+        M.get_ahead_behind_count(branch, function(ahead, behind, _)
+          callback({
+            branch = branch,
+            ahead = ahead,
+            behind = behind,
+            is_main = branch == config.main_branch,
+            error = false,
+            up_to_date = behind == 0,
+            has_local_changes = ahead > 0,
+          })
+        end)
       end)
-    end)
-  end)
+    end,
+  })
 end
 
-local function has_uncommitted_changes(config, repo_path, callback)
-  M.execute_command("git status --porcelain", "status", "Git status", config, repo_path, function(result, err)
-    if err then
-      callback(nil, err)
-    else
-      -- If output is non-empty, there are uncommitted changes
-      local has_changes = result and #vim.trim(result) > 0
-      callback(has_changes, nil)
-    end
-  end)
+local function has_uncommitted_changes_simple(callback)
+  M.execute_command("git status --porcelain", {
+    timeout_key = "status",
+    operation_name = "Git status",
+    callback = function(result, err)
+      if err then
+        callback(nil, err)
+      else
+        -- If output is non-empty, there are uncommitted changes
+        local has_changes = result and #vim.trim(result) > 0
+        callback(has_changes, nil)
+      end
+    end,
+  })
 end
 
-function M.rollback_to_commit(config, repo_path, commit_hash, callback)
+function M.rollback_to_commit(commit_hash, callback)
   local rollback_cmd = "git merge --abort 2>/dev/null || true; git rebase --abort 2>/dev/null || true; git reset --hard "
     .. commit_hash
-  M.execute_command(rollback_cmd, "default", "Rollback", config, repo_path, function(_, err)
-    if err then
-      callback(false, "Failed to rollback: " .. err)
-    else
-      callback(true, nil)
-    end
-  end)
+  M.execute_command(rollback_cmd, {
+    operation_name = "Rollback",
+    callback = function(_, err)
+      if err then
+        callback(false, "Failed to rollback: " .. err)
+      else
+        callback(true, nil)
+      end
+    end,
+  })
 end
 
-function M.are_commits_in_branch(commits, branch, config, repo_path, callback)
+function M.are_commits_in_branch(commits, branch, callback)
   local result = {}
   local remaining = #commits
 
@@ -260,7 +294,7 @@ function M.are_commits_in_branch(commits, branch, config, repo_path, callback)
   end
 
   for _, commit in ipairs(commits) do
-    is_commit_in_branch(commit.hash, branch, config, repo_path, function(is_in_branch, _)
+    is_commit_in_branch(commit.hash, branch, function(is_in_branch, _)
       result[commit.hash] = is_in_branch
       remaining = remaining - 1
       if remaining == 0 then
@@ -270,10 +304,12 @@ function M.are_commits_in_branch(commits, branch, config, repo_path, callback)
   end
 end
 
-local function fetch_updates_async(config, repo_path, callback)
+local function fetch_updates_async(callback)
+  local config = Config.get()
+  local repo_path = config.repo_path
   local cd_cmd = "cd " .. vim.fn.shellescape(repo_path) .. " && "
 
-  execute_command_async(cd_cmd .. "git fetch origin " .. config.main_branch, "fetch", config, function(_, fetch_err)
+  execute_command_async(cd_cmd .. "git fetch origin " .. config.main_branch, "fetch", function(_, fetch_err)
     if fetch_err then
       local error_msg
       if fetch_err:match("timed out") then
@@ -293,7 +329,9 @@ end
 
 -- Execute update command (pull or merge)
 -- For non-main branches, uses git stash to handle uncommitted changes
-local function execute_update_command(config, repo_path, current_branch, has_uncommitted, callback)
+local function execute_update_command(current_branch, has_uncommitted, callback)
+  local config = Config.get()
+  local repo_path = config.repo_path
   local cd_cmd = "cd " .. vim.fn.shellescape(repo_path) .. " && "
   local cmd, timeout_key
 
@@ -325,7 +363,7 @@ local function execute_update_command(config, repo_path, current_branch, has_unc
     timeout_key = "merge"
   end
 
-  execute_command_async(cd_cmd .. cmd, timeout_key, config, function(result, err)
+  execute_command_async(cd_cmd .. cmd, timeout_key, function(result, err)
     callback(result, err, timeout_key)
   end)
 end
@@ -360,7 +398,8 @@ end
 
 -- Handle update result and notify user
 -- Returns: success, message, needs_rollback
-local function handle_update_result(config, current_branch, result, err, timeout_key)
+local function handle_update_result(current_branch, result, err, timeout_key)
+  local config = Config.get()
   if err then
     local error_msg
     local rollback_needed = true
@@ -399,44 +438,45 @@ local function handle_update_result(config, current_branch, result, err, timeout
 end
 
 -- Update repo (fetch + pull/merge with rollback on failure)
-function M.update_repo(config, repo_path, callback)
+function M.update_repo(callback)
+  local config = Config.get()
   -- Get current branch first
-  get_current_branch(config, repo_path, function(current_branch, branch_err)
+  get_current_branch(function(current_branch, branch_err)
     if branch_err or not current_branch or current_branch == "unknown" then
       callback(false, "Failed to get current branch: " .. (branch_err or "Unknown error"))
       return
     end
 
     -- Step 1: Save current HEAD for potential rollback
-    M.get_current_commit(config, repo_path, function(saved_head, head_err)
+    M.get_current_commit(function(saved_head, head_err)
       if head_err or not saved_head then
         callback(false, "Failed to save current state: " .. (head_err or "Unknown error"))
         return
       end
 
       -- Step 2: Check for uncommitted changes
-      has_uncommitted_changes(config, repo_path, function(has_uncommitted, status_err)
+      has_uncommitted_changes_simple(function(has_uncommitted, status_err)
         if status_err then
           callback(false, "Failed to check working directory status: " .. status_err)
           return
         end
 
         -- Step 3: Fetch updates
-        fetch_updates_async(config, repo_path, function(fetch_success, fetch_error)
+        fetch_updates_async(function(fetch_success, fetch_error)
           if not fetch_success then
             callback(false, fetch_error)
             return
           end
 
           -- Step 4: Execute update command
-          execute_update_command(config, repo_path, current_branch, has_uncommitted, function(result, err, timeout_key)
+          execute_update_command(current_branch, has_uncommitted, function(result, err, timeout_key)
             -- Step 5: Handle result
             local success, message, rollback_needed =
-              handle_update_result(config, current_branch, result, err, timeout_key)
+              handle_update_result(current_branch, result, err, timeout_key)
 
             -- Step 6: Rollback if needed
             if rollback_needed then
-              M.rollback_to_commit(config, repo_path, saved_head, function(rollback_success, rollback_err)
+              M.rollback_to_commit(saved_head, function(rollback_success, rollback_err)
                 if not rollback_success then
                   local full_error = message .. " Rollback also failed: " .. (rollback_err or "Unknown error")
                   vim.notify(full_error, vim.log.levels.ERROR, { title = config.notify.error.title })
@@ -460,7 +500,9 @@ function M.update_repo(config, repo_path, callback)
   end)
 end
 
-function M.validate_git_repository(path, callback)
+function M.validate_git_repository(callback)
+  local config = Config.get()
+  local path = config and config.repo_path
   if not path then
     callback(false, "No repository path provided")
     return
@@ -505,16 +547,14 @@ function M.get_validation_status(path)
 end
 
 -- Get list of version tags sorted by semantic version (newest first)
-function M.get_version_tags(config, repo_path, callback)
+function M.get_version_tags(callback)
+  local config = Config.get()
   local pattern = config.version_tag_pattern or "v*"
   -- Fetch tags first, then list them sorted by version
-  M.execute_command(
-    "git fetch --tags --quiet && git tag -l " .. vim.fn.shellescape(pattern) .. " --sort=-version:refname",
-    "status",
-    "Git tag list",
-    config,
-    repo_path,
-    function(result, err)
+  M.execute_command("git fetch --tags --quiet && git tag -l " .. vim.fn.shellescape(pattern) .. " --sort=-version:refname", {
+    timeout_key = "status",
+    operation_name = "Git tag list",
+    callback = function(result, err)
       if err then
         callback({}, err)
         return
@@ -530,19 +570,16 @@ function M.get_version_tags(config, repo_path, callback)
         end
       end
       callback(tags, nil)
-    end
-  )
+    end,
+  })
 end
 
 -- Check if HEAD is on a tag, returns tag name or nil
-function M.get_head_tag(config, repo_path, callback)
-  M.execute_command(
-    "git describe --tags --exact-match HEAD 2>/dev/null || echo ''",
-    "status",
-    "Git tag check",
-    config,
-    repo_path,
-    function(result, err)
+function M.get_head_tag(callback)
+  M.execute_command("git describe --tags --exact-match HEAD 2>/dev/null || echo ''", {
+    timeout_key = "status",
+    operation_name = "Git tag check",
+    callback = function(result, err)
       if err then
         callback(nil, err)
         return
@@ -554,32 +591,28 @@ function M.get_head_tag(config, repo_path, callback)
       else
         callback(tag, nil)
       end
-    end
-  )
+    end,
+  })
 end
 
 -- Checkout a specific tag (creates detached HEAD)
-function M.checkout_tag(config, repo_path, tag_name, callback)
+function M.checkout_tag(tag_name, callback)
   -- First, discard any lockfile changes that might block checkout
   -- Then checkout the tag in a single command chain
   local discard_lockfiles = "git checkout -- lazy-lock.json mason-lock.json 2>/dev/null || true"
   local checkout_tag = "git checkout " .. vim.fn.shellescape(tag_name)
   local combined_cmd = discard_lockfiles .. " && " .. checkout_tag
 
-  M.execute_command(
-    combined_cmd,
-    "default",
-    "Git checkout tag",
-    config,
-    repo_path,
-    function(_result, err)
+  M.execute_command(combined_cmd, {
+    operation_name = "Git checkout tag",
+    callback = function(_result, err)
       if err then
         callback(false, "Failed to checkout tag: " .. (err or "unknown error"))
       else
         callback(true, nil)
       end
-    end
-  )
+    end,
+  })
 end
 
 -- Expose uncommitted changes check (already exists as local, make it public)
@@ -610,73 +643,79 @@ local function parse_status_files(status_output)
   return files
 end
 
-function M.has_uncommitted_changes(config, repo_path, callback)
-  M.execute_command("git status --porcelain", "status", "Git status", config, repo_path, function(result, err)
-    if err then
-      callback(nil, err)
-      return
-    end
-
-    local trimmed = result and vim.trim(result) or ""
-    if trimmed == "" then
-      -- No changes at all
-      callback(false, nil)
-      return
-    end
-
-    -- Parse the changed files
-    local changed_files = parse_status_files(trimmed)
-
-    -- Check if ALL changed files are lockfiles
-    local non_lockfile_changes = {}
-    local lockfile_changes = {}
-
-    for _, filepath in ipairs(changed_files) do
-      if is_lockfile(filepath) then
-        table.insert(lockfile_changes, filepath)
-      else
-        table.insert(non_lockfile_changes, filepath)
-      end
-    end
-
-    if #non_lockfile_changes > 0 then
-      -- There are non-lockfile changes, block the update
-      callback(true, nil)
-    elseif #lockfile_changes > 0 then
-      -- Only lockfile changes - discard them and proceed
-      local checkout_cmd = "git checkout --"
-      for _, filepath in ipairs(lockfile_changes) do
-        checkout_cmd = checkout_cmd .. " " .. vim.fn.shellescape(filepath)
+function M.has_uncommitted_changes(callback)
+  M.execute_command("git status --porcelain", {
+    timeout_key = "status",
+    operation_name = "Git status",
+    callback = function(result, err)
+      if err then
+        callback(nil, err)
+        return
       end
 
-      M.execute_command(checkout_cmd, "checkout", "Discard lockfile changes", config, repo_path, function(_, checkout_err)
-        if checkout_err then
-          -- Failed to discard, treat as having changes
-          callback(true, nil)
+      local trimmed = result and vim.trim(result) or ""
+      if trimmed == "" then
+        -- No changes at all
+        callback(false, nil)
+        return
+      end
+
+      -- Parse the changed files
+      local changed_files = parse_status_files(trimmed)
+
+      -- Check if ALL changed files are lockfiles
+      local non_lockfile_changes = {}
+      local lockfile_changes = {}
+
+      for _, filepath in ipairs(changed_files) do
+        if is_lockfile(filepath) then
+          table.insert(lockfile_changes, filepath)
         else
-          -- Successfully discarded lockfile changes
-          callback(false, nil)
+          table.insert(non_lockfile_changes, filepath)
         end
-      end)
-    else
-      -- No changes (shouldn't reach here, but handle it)
-      callback(false, nil)
-    end
-  end)
+      end
+
+      if #non_lockfile_changes > 0 then
+        -- There are non-lockfile changes, block the update
+        callback(true, nil)
+      elseif #lockfile_changes > 0 then
+        -- Only lockfile changes - discard them and proceed
+        local checkout_cmd = "git checkout --"
+        for _, filepath in ipairs(lockfile_changes) do
+          checkout_cmd = checkout_cmd .. " " .. vim.fn.shellescape(filepath)
+        end
+
+        M.execute_command(checkout_cmd, {
+          timeout_key = "checkout",
+          operation_name = "Discard lockfile changes",
+          callback = function(_, checkout_err)
+            if checkout_err then
+              -- Failed to discard, treat as having changes
+              callback(true, nil)
+            else
+              -- Successfully discarded lockfile changes
+              callback(false, nil)
+            end
+          end,
+        })
+      else
+        -- No changes (shouldn't reach here, but handle it)
+        callback(false, nil)
+      end
+    end,
+  })
 end
 
 -- Get the latest release tag that is an ancestor of the given ref (or HEAD)
 -- This finds the most recent version tag reachable from the current commit
-function M.get_latest_release_for_ref(config, repo_path, ref, callback)
+function M.get_latest_release_for_ref(ref, callback)
+  local config = Config.get()
   ref = ref or "HEAD"
   local pattern = config.version_tag_pattern or "v*"
-  M.execute_command(
-    "git describe --tags --abbrev=0 --match " .. vim.fn.shellescape(pattern) .. " " .. ref .. " 2>/dev/null || echo ''",
-    "status",
-    "Git release check",
-    config,
-    repo_path,
-    function(result, err)
+  M.execute_command("git describe --tags --abbrev=0 --match " .. vim.fn.shellescape(pattern) .. " " .. ref .. " 2>/dev/null || echo ''", {
+    timeout_key = "status",
+    operation_name = "Git release check",
+    callback = function(result, err)
       if err then
         callback(nil, err)
         return
@@ -688,30 +727,21 @@ function M.get_latest_release_for_ref(config, repo_path, ref, callback)
       else
         callback(tag, nil)
       end
-    end
-  )
-end
-
--- Get the latest release tag on the remote main branch
-function M.get_latest_remote_release(config, repo_path, callback)
-  local main = config.main_branch or "main"
-  M.get_latest_release_for_ref(config, repo_path, "origin/" .. main, callback)
+    end,
+  })
 end
 
 -- Count commits between a tag and HEAD (commits since release)
-function M.get_commits_since_tag(config, repo_path, tag, callback)
+function M.get_commits_since_tag(tag, callback)
   if not tag then
     callback(0, nil)
     return
   end
 
-  M.execute_command(
-    "git rev-list " .. vim.fn.shellescape(tag) .. "..HEAD --count",
-    "status",
-    "Git commit count",
-    config,
-    repo_path,
-    function(result, err)
+  M.execute_command("git rev-list " .. vim.fn.shellescape(tag) .. "..HEAD --count", {
+    timeout_key = "status",
+    operation_name = "Git commit count",
+    callback = function(result, err)
       if err then
         callback(0, err)
         return
@@ -719,8 +749,8 @@ function M.get_commits_since_tag(config, repo_path, tag, callback)
 
       local count = tonumber(vim.trim(result or "0")) or 0
       callback(count, nil)
-    end
-  )
+    end,
+  })
 end
 
 -- Compare two version tags to see if remote is newer
@@ -782,20 +812,17 @@ function M.compare_version_tags(tag1, tag2)
 end
 
 -- Get the list of commits since a tag (for display)
-function M.get_commits_since_tag_list(config, repo_path, tag, callback)
+function M.get_commits_since_tag_list(tag, callback)
   if not tag then
     callback({}, nil)
     return
   end
 
   local log_format = '--format=format:"%h|%s|%an|%ar"'
-  M.execute_command(
-    "git log " .. log_format .. " " .. vim.fn.shellescape(tag) .. "..HEAD",
-    "log",
-    "Git commits since tag",
-    config,
-    repo_path,
-    function(result, err)
+  M.execute_command("git log " .. log_format .. " " .. vim.fn.shellescape(tag) .. "..HEAD", {
+    timeout_key = "log",
+    operation_name = "Git commits since tag",
+    callback = function(result, err)
       if err then
         callback({}, err)
         return
@@ -816,25 +843,22 @@ function M.get_commits_since_tag_list(config, repo_path, tag, callback)
         end
       end
       callback(commits, nil)
-    end
-  )
+    end,
+  })
 end
 
 -- Get the commit info for a specific tag
-function M.get_tag_commit_info(config, repo_path, tag, callback)
+function M.get_tag_commit_info(tag, callback)
   if not tag then
     callback(nil, nil)
     return
   end
 
   local log_format = '--format=format:"%h|%s|%an|%ar"'
-  M.execute_command(
-    "git log " .. log_format .. " -1 " .. vim.fn.shellescape(tag),
-    "log",
-    "Git tag commit",
-    config,
-    repo_path,
-    function(result, err)
+  M.execute_command("git log " .. log_format .. " -1 " .. vim.fn.shellescape(tag), {
+    timeout_key = "log",
+    operation_name = "Git tag commit",
+    callback = function(result, err)
       if err then
         callback(nil, err)
         return
@@ -854,13 +878,13 @@ function M.get_tag_commit_info(config, repo_path, tag, callback)
         end
       end
       callback(nil, nil)
-    end
-  )
+    end,
+  })
 end
 
 -- Get releases (tags) between current tag and latest tag
 -- Returns tags newer than current_tag, sorted newest first
-function M.get_releases_since_tag(config, repo_path, current_tag, all_tags, callback)
+function M.get_releases_since_tag(current_tag, all_tags, callback)
   if not current_tag or not all_tags or #all_tags == 0 then
     callback({}, nil)
     return
@@ -885,7 +909,7 @@ function M.get_releases_since_tag(config, repo_path, current_tag, all_tags, call
   end
 
   for i, tag in ipairs(releases_since) do
-    M.get_tag_commit_info(config, repo_path, tag, function(commit_info, _)
+    M.get_tag_commit_info(tag, function(commit_info, _)
       results[i] = commit_info or { tag = tag, hash = "", message = "", author = "", date = "" }
       remaining = remaining - 1
       if remaining == 0 then
@@ -904,7 +928,7 @@ end
 
 -- Get releases before (older than) a given tag
 -- Returns tags sorted newest first (closest to current first)
-function M.get_releases_before_tag(config, repo_path, current_tag, all_tags, max_count, callback)
+function M.get_releases_before_tag(current_tag, all_tags, max_count, callback)
   if not current_tag or not all_tags or #all_tags == 0 then
     callback({}, nil)
     return
@@ -934,7 +958,7 @@ function M.get_releases_before_tag(config, repo_path, current_tag, all_tags, max
   end
 
   for i, tag in ipairs(releases_before) do
-    M.get_tag_commit_info(config, repo_path, tag, function(commit_info, _)
+    M.get_tag_commit_info(tag, function(commit_info, _)
       results[i] = commit_info or { tag = tag, hash = "", message = "", author = "", date = "" }
       remaining = remaining - 1
       if remaining == 0 then
@@ -952,25 +976,22 @@ function M.get_releases_before_tag(config, repo_path, current_tag, all_tags, max
 end
 
 -- Check if we're on a detached HEAD
-function M.is_detached_head(config, repo_path, callback)
-  M.execute_command(
-    "git symbolic-ref -q HEAD >/dev/null 2>&1 && echo 'attached' || echo 'detached'",
-    "status",
-    "Git HEAD check",
-    config,
-    repo_path,
-    function(result, err)
+function M.is_detached_head(callback)
+  M.execute_command("git symbolic-ref -q HEAD >/dev/null 2>&1 && echo 'attached' || echo 'detached'", {
+    timeout_key = "status",
+    operation_name = "Git HEAD check",
+    callback = function(result, err)
       if err then
         callback(false, err)
         return
       end
       callback(vim.trim(result or "") == "detached", nil)
-    end
-  )
+    end,
+  })
 end
 
 -- Get release details for a tag
-function M.get_release_details(config, repo_path, tag, prev_tag, callback)
+function M.get_release_details(tag, prev_tag, callback)
   if not tag then
     callback(nil, "No tag provided")
     return
@@ -1008,43 +1029,34 @@ function M.get_release_details(config, repo_path, tag, prev_tag, callback)
   end
 
   -- 1. Get tag commit hash
-  M.execute_command(
-    "git rev-list -n 1 " .. vim.fn.shellescape(tag),
-    "log",
-    "Git tag commit",
-    config,
-    repo_path,
-    function(result, _)
+  M.execute_command("git rev-list -n 1 " .. vim.fn.shellescape(tag), {
+    timeout_key = "log",
+    operation_name = "Git tag commit",
+    callback = function(result, _)
       if result then
         details.commit = vim.trim(result):sub(1, 7) -- Short hash
       end
       check_done()
-    end
-  )
+    end,
+  })
 
   -- 2. Get tag date
-  M.execute_command(
-    "git log -1 --format=%ai " .. vim.fn.shellescape(tag),
-    "log",
-    "Git tag date",
-    config,
-    repo_path,
-    function(result, _)
+  M.execute_command("git log -1 --format=%ai " .. vim.fn.shellescape(tag), {
+    timeout_key = "log",
+    operation_name = "Git tag date",
+    callback = function(result, _)
       if result then
         details.date = vim.trim(result):sub(1, 10) -- Just the date part YYYY-MM-DD
       end
       check_done()
-    end
-  )
+    end,
+  })
 
   -- 3. Get tag message (title and description)
-  M.execute_command(
-    "git tag -l --format='%(contents:subject)|%(contents:body)' " .. vim.fn.shellescape(tag),
-    "tag",
-    "Git tag message",
-    config,
-    repo_path,
-    function(result, _)
+  M.execute_command("git tag -l --format='%(contents:subject)|%(contents:body)' " .. vim.fn.shellescape(tag), {
+    timeout_key = "tag",
+    operation_name = "Git tag message",
+    callback = function(result, _)
       if result then
         local parts = vim.split(result, "|", { plain = true })
         details.title = vim.trim(parts[1] or "")
@@ -1058,8 +1070,8 @@ function M.get_release_details(config, repo_path, tag, prev_tag, callback)
         end
       end
       check_done()
-    end
-  )
+    end,
+  })
 
   -- 4. Get diff stats
   -- If prev_tag exists, compare between tags; otherwise show stats for the tag's commit
@@ -1071,13 +1083,10 @@ function M.get_release_details(config, repo_path, tag, prev_tag, callback)
     diff_cmd = "git show --shortstat --format='' " .. vim.fn.shellescape(tag)
   end
 
-  M.execute_command(
-    diff_cmd,
-    "diff",
-    "Git diff stats",
-    config,
-    repo_path,
-    function(result, _)
+  M.execute_command(diff_cmd, {
+    timeout_key = "diff",
+    operation_name = "Git diff stats",
+    callback = function(result, _)
       if result then
         -- Parse "X files changed, Y insertions(+), Z deletions(-)"
         local added = result:match("(%d+) insertion")
@@ -1088,8 +1097,8 @@ function M.get_release_details(config, repo_path, tag, prev_tag, callback)
         details.lines_changed = tonumber(changed) or 0
       end
       check_done()
-    end
-  )
+    end,
+  })
 
   -- 5. Get plugin and mason lock changes
   -- If prev_tag exists, compare between tags; otherwise show stats for the tag's commit
@@ -1101,13 +1110,10 @@ function M.get_release_details(config, repo_path, tag, prev_tag, callback)
     numstat_cmd = "git show --numstat --format='' " .. vim.fn.shellescape(tag)
   end
 
-  M.execute_command(
-    numstat_cmd,
-    "diff",
-    "Git lockfile changes",
-    config,
-    repo_path,
-    function(result, _)
+  M.execute_command(numstat_cmd, {
+    timeout_key = "diff",
+    operation_name = "Git lockfile changes",
+    callback = function(result, _)
       if result then
         for line in result:gmatch("[^\n]+") do
           local added, deleted, file = line:match("(%d+)%s+(%d+)%s+(.+)")
@@ -1125,11 +1131,11 @@ function M.get_release_details(config, repo_path, tag, prev_tag, callback)
         end
       end
       check_done()
-    end
-  )
+    end,
+  })
 
   -- Construct GitHub URL
-  M.get_remote_url(config, repo_path, function(remote_url, _)
+  M.get_remote_url(function(remote_url, _)
     if remote_url then
       -- Convert git URL to HTTPS URL for releases
       local https_url = remote_url
@@ -1141,21 +1147,18 @@ function M.get_release_details(config, repo_path, tag, prev_tag, callback)
 end
 
 -- Get remote URL for the repo
-function M.get_remote_url(config, repo_path, callback)
-  M.execute_command(
-    "git remote get-url origin",
-    "remote",
-    "Git remote URL",
-    config,
-    repo_path,
-    function(result, err)
+function M.get_remote_url(callback)
+  M.execute_command("git remote get-url origin", {
+    timeout_key = "remote",
+    operation_name = "Git remote URL",
+    callback = function(result, err)
       if err then
         callback(nil, err)
         return
       end
       callback(vim.trim(result or ""), nil)
-    end
-  )
+    end,
+  })
 end
 
 return M

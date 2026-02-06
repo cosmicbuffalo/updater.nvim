@@ -1,16 +1,19 @@
 local Operations = require("updater.operations")
 local Status = require("updater.status")
+local Config = require("updater.config")
 local Git = require("updater.git")
 
 describe("operations module", function()
   local test_dir
-  local test_config
 
   before_each(function()
-    test_dir = _G.test_helpers.create_temp_dir()
-    _G.test_helpers.init_git_repo(test_dir)
+    test_dir = vim.fn.tempname()
+    vim.fn.mkdir(test_dir, "p")
 
-    test_config = {
+    -- Initialize a git repo
+    vim.fn.system("cd " .. vim.fn.shellescape(test_dir) .. " && git init && git config user.email 'test@test.com' && git config user.name 'Test' && touch test.txt && git add . && git commit -m 'Initial commit'")
+
+    Config._reset({
       repo_path = test_dir,
       main_branch = "main",
       log_count = 15,
@@ -32,7 +35,7 @@ describe("operations module", function()
         rebase = true,
         autostash = true,
       },
-    }
+    })
 
     -- Reset status state
     Status.state.is_refreshing = false
@@ -51,7 +54,8 @@ describe("operations module", function()
   end)
 
   after_each(function()
-    _G.test_helpers.cleanup_temp_dir(test_dir)
+    vim.fn.delete(test_dir, "rf")
+    Config._reset(nil)
     Git.clear_validation_cache()
   end)
 
@@ -59,13 +63,13 @@ describe("operations module", function()
     it("should update status state after checking", function()
       local done = false
 
-      Operations.check_updates_silent(test_config, function(has_updates)
+      Operations.check_updates_silent(function(_)
         done = true
       end)
 
-      _G.test_helpers.wait_for(function()
+      vim.wait(2000, function()
         return done
-      end)
+      end, 10)
 
       -- Should have updated the state
       assert.is_not_nil(Status.state.last_check_time)
@@ -76,14 +80,14 @@ describe("operations module", function()
       local done = false
       local result = nil
 
-      Operations.check_updates_silent(test_config, function(has_updates)
+      Operations.check_updates_silent(function(has_updates)
         result = has_updates
         done = true
       end)
 
-      _G.test_helpers.wait_for(function()
+      vim.wait(2000, function()
         return done
-      end)
+      end, 10)
 
       -- Result should be a boolean
       assert.is_boolean(result)
@@ -91,7 +95,7 @@ describe("operations module", function()
 
     it("should work without callback", function()
       -- Should not error when callback is nil
-      Operations.check_updates_silent(test_config, nil)
+      Operations.check_updates_silent(nil)
 
       -- Wait a bit for async operation
       vim.wait(500, function()
@@ -107,14 +111,14 @@ describe("operations module", function()
       local done = false
       local result = nil
 
-      Operations.check_updates_silent(test_config, function(has_updates)
+      Operations.check_updates_silent(function(has_updates)
         result = has_updates
         done = true
       end)
 
-      _G.test_helpers.wait_for(function()
+      vim.wait(2000, function()
         return done
-      end)
+      end, 10)
 
       -- Debug mode should simulate updates
       assert.is_true(result)
@@ -131,29 +135,29 @@ describe("operations module", function()
         refresh_started = Status.state.is_refreshing
       end, 150)
 
-      Operations.refresh(test_config, function() end)
+      Operations.refresh(function() end)
 
-      _G.test_helpers.wait_for(function()
+      vim.wait(2000, function()
         return refresh_started or not Status.state.is_refreshing
-      end, 2000)
+      end, 10)
     end)
 
     it("should call render callback", function()
       local callback_called = false
 
-      local render_callback = function(mode)
+      local render_callback = function(_)
         callback_called = true
       end
 
       -- Render callback only fires when is_open is true
       Status.state.is_open = true
 
-      Operations.refresh(test_config, render_callback)
+      Operations.refresh(render_callback)
 
       -- Wait for operation to complete
-      _G.test_helpers.wait_for(function()
+      vim.wait(5000, function()
         return not Status.state.is_refreshing
-      end, 5000)
+      end, 10)
 
       -- Give a bit more time for callbacks
       vim.wait(200, function()

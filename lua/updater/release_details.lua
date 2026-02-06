@@ -155,7 +155,7 @@ function M.get_previous_tag(tag)
 end
 
 -- Toggle expansion and fetch details if needed
-function M.toggle_release(config, tag, render_callback)
+function M.toggle_release(tag, render_callback)
   if not tag then
     return
   end
@@ -169,7 +169,7 @@ function M.toggle_release(config, tag, render_callback)
       Status.set_fetching_release_details(tag, true)
 
       local prev_tag = M.get_previous_tag(tag)
-      Git.get_release_details(config, config.repo_path, tag, prev_tag, function(details, _)
+      Git.get_release_details(tag, prev_tag, function(details, _)
         Status.set_fetching_release_details(tag, false)
         if details then
           Status.set_release_details(tag, details)

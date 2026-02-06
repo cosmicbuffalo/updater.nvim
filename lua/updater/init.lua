@@ -15,14 +15,10 @@ local M = {}
 -- Expose status module for external integrations
 M.status = Status
 
-local config = {}
-
-function M.get_config()
-  return config
-end
 local state = Status.state
 
 local function render_callback(mode, opts)
+  local config = Config.get()
   if mode == "loading" then
     Window.render_loading_state(config)
   else
@@ -31,6 +27,8 @@ local function render_callback(mode, opts)
 end
 
 function M.open()
+  local config = Config.get()
+
   if state.is_open then
     if vim.api.nvim_win_is_valid(state.window) then
       vim.api.nvim_set_current_win(state.window)
@@ -45,19 +43,19 @@ function M.open()
   Window.setup_keymaps(config, {
     close = M.close,
     update = function()
-      Operations.update_repo(config, render_callback)
+      Operations.update_repo(render_callback)
     end,
     refresh = function()
-      Operations.refresh(config, render_callback)
+      Operations.refresh(render_callback)
     end,
     install_plugins = function()
-      Plugins.install_plugin_updates(config, render_callback)
+      Plugins.install_plugin_updates(render_callback)
     end,
     update_all = function()
       if config.versioned_releases_only then
         -- In versioned releases mode, switch to the latest release tag
         -- Same behavior as hitting 's' on the latest release
-        Version.switch_to_latest(config, function(success, msg)
+        Version.switch_to_latest(function(success, msg)
           if success then
             -- Just render to show the success message, don't refresh
             render_callback()
@@ -66,7 +64,7 @@ function M.open()
           end
         end, render_callback)
       else
-        Operations.update_dotfiles_and_plugins(config, render_callback)
+        Operations.update_dotfiles_and_plugins(render_callback)
       end
     end,
     toggle_release = function()
@@ -89,7 +87,7 @@ function M.open()
             end
           end)
         end
-        ReleaseDetails.toggle_release(config, tag, restore_cursor_callback)
+        ReleaseDetails.toggle_release(tag, restore_cursor_callback)
       end
     end,
     switch_to_release = function()
@@ -107,7 +105,7 @@ function M.open()
         local switch_render_callback = function(mode)
           render_callback(mode, { cursor_on_tag = tag })
         end
-        Version.switch_to_version(config, tag, function(success, msg)
+        Version.switch_to_version(tag, function(success, msg)
           if success then
             -- Render with cursor on the tag we switched to
             switch_render_callback()
@@ -175,7 +173,7 @@ function M.open()
   end
 
   vim.defer_fn(function()
-    Operations.refresh(config, render_callback)
+    Operations.refresh(render_callback)
   end, 10)
 end
 
@@ -185,12 +183,14 @@ function M.close()
 end
 
 function M.refresh()
-  Operations.refresh(config, render_callback)
+  Operations.refresh(render_callback)
 end
 
 function M.check_updates()
+  local config = Config.get()
+
   -- First validate the git repository (async, with caching)
-  Git.validate_git_repository(config.repo_path, function(is_valid, validation_err)
+  Git.validate_git_repository(function(is_valid, validation_err)
     if not is_valid then
       vim.notify(
         "Invalid git repository: " .. (validation_err or "unknown error"),
@@ -201,7 +201,7 @@ function M.check_updates()
     end
 
     -- Now check for updates asynchronously
-    Git.get_repo_status(config, config.repo_path, function(status)
+    Git.get_repo_status(function(status)
       if status.error then
         vim.notify(config.notify.error.message, vim.log.levels.ERROR, { title = config.notify.error.title })
         return
@@ -229,7 +229,7 @@ end
 -- DEPRECATED
 function M.start_periodic_check()
   Periodic.stop_periodic_check()
-  Periodic.setup_periodic_check(config)
+  Periodic.setup_periodic_check()
 end
 
 -- DEPRECATED
@@ -239,7 +239,7 @@ end
 
 local function load_debug_module()
   local debug = require("updater.debug")
-  debug.init(config)
+  debug.init()
   return debug
 end
 
@@ -264,11 +264,11 @@ local function setup_user_commands()
   end, { desc = "Toggle Updater debug mode" })
 
   vim.api.nvim_create_user_command("DotfilesVersion", function(opts)
-    Version.handle_command(config, opts.args and vim.trim(opts.args) or "")
+    Version.handle_command(opts.args and vim.trim(opts.args) or "")
   end, {
     nargs = "?",
     complete = function(arglead)
-      return Version.get_completion_list(config, arglead)
+      return Version.get_completion_list(arglead)
     end,
     desc = "Switch dotfiles to a specific version or show available versions",
   })
@@ -286,13 +286,11 @@ function M.setup(opts)
     return
   end
 
-  config = setup_config
-
-  vim.keymap.set("n", config.keymap.open, M.open, { noremap = true, silent = true, desc = "Open Updater" })
+  vim.keymap.set("n", setup_config.keymap.open, M.open, { noremap = true, silent = true, desc = "Open Updater" })
   setup_user_commands()
 
-  Periodic.setup_startup_check(config, M.check_updates)
-  Periodic.setup_periodic_check(config)
+  Periodic.setup_startup_check(M.check_updates)
+  Periodic.setup_periodic_check()
 end
 
 return M

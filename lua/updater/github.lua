@@ -37,7 +37,7 @@ end
 
 -- Fetch all releases from GitHub API
 -- callback(releases_map, error) where releases_map is tag -> release_data
-function M.fetch_releases(config, repo_path, callback)
+function M.fetch_releases(callback)
   local now = os.time()
 
   -- Check cache
@@ -48,7 +48,7 @@ function M.fetch_releases(config, repo_path, callback)
 
   -- Get the remote URL to parse owner/repo
   local Git = require("updater.git")
-  Git.get_remote_url(config, repo_path, function(remote_url, err)
+  Git.get_remote_url(function(remote_url, err)
     if err or not remote_url then
       callback({}, "Failed to get remote URL: " .. (err or "unknown"))
       return
@@ -161,11 +161,6 @@ end
 function M.clear_cache()
   releases_cache.data = {}
   releases_cache.last_fetch = 0
-end
-
--- Set cache TTL
-function M.set_cache_ttl(seconds)
-  releases_cache.ttl = seconds
 end
 
 return M

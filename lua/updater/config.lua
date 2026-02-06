@@ -1,5 +1,14 @@
 local M = {}
 
+-- Module-level config storage
+local current_config = nil
+
+-- Get the current config
+-- @return table|nil The current config or nil if not set up
+function M.get()
+  return current_config
+end
+
 local function validate_timeout_utility(cfg)
   local errors = {}
   if cfg.timeout_utility and type(cfg.timeout_utility) ~= "string" then
@@ -222,7 +231,16 @@ function M.setup_config(opts)
 
   merged_config.repo_path = sanitized_path
 
+  -- Store the config internally
+  current_config = merged_config
+
   return merged_config
+end
+
+-- Reset config (for testing only)
+-- @param config table|nil The config to set, or nil to clear
+function M._reset(config)
+  current_config = config
 end
 
 return M

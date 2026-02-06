@@ -12,14 +12,14 @@ local version_cache = {
 }
 
 -- Get available versions (with caching)
-function M.get_available_versions(config, callback)
+function M.get_available_versions(callback)
   local now = os.time()
   if now - version_cache.last_fetch < Constants.VERSION_CACHE_TTL and #version_cache.tags > 0 then
     callback(version_cache.tags, nil)
     return
   end
 
-  Git.get_version_tags(config, config.repo_path, function(tags, err)
+  Git.get_version_tags(function(tags, err)
     if err then
       callback({}, err)
       return
@@ -32,8 +32,8 @@ function M.get_available_versions(config, callback)
 end
 
 -- Check for uncommitted changes
-function M.has_uncommitted_changes(config, callback)
-  Git.has_uncommitted_changes(config, config.repo_path, callback)
+function M.has_uncommitted_changes(callback)
+  Git.has_uncommitted_changes(callback)
 end
 
 -- Check if mason-lock plugin is installed
@@ -131,7 +131,7 @@ local function clear_switching_state(state)
   Spinner.stop_loading_spinner()
 end
 
-function M.switch_to_version(config, version, callback, render_callback)
+function M.switch_to_version(version, callback, render_callback)
   local state = Status.state
 
   -- Prevent concurrent switches
@@ -154,7 +154,7 @@ function M.switch_to_version(config, version, callback, render_callback)
   end
 
   -- Step 1: Check for uncommitted changes
-  M.has_uncommitted_changes(config, function(has_changes, err)
+  M.has_uncommitted_changes(function(has_changes, err)
     if err then
       clear_switching_state(state)
       callback(false, "Failed to check for changes: " .. err)
@@ -168,7 +168,7 @@ function M.switch_to_version(config, version, callback, render_callback)
     end
 
     -- Step 2: Verify tag exists
-    M.get_available_versions(config, function(tags, tags_err)
+    M.get_available_versions(function(tags, tags_err)
       if tags_err then
         clear_switching_state(state)
         callback(false, "Failed to fetch versions: " .. tags_err)
@@ -191,7 +191,7 @@ function M.switch_to_version(config, version, callback, render_callback)
       end
 
       -- Step 3: Checkout tag
-      Git.checkout_tag(config, config.repo_path, version, function(checkout_ok, checkout_err)
+      Git.checkout_tag(version, function(checkout_ok, checkout_err)
         if not checkout_ok then
           clear_switching_state(state)
           callback(false, checkout_err)
@@ -214,7 +214,7 @@ function M.switch_to_version(config, version, callback, render_callback)
               Operations = require("updater.operations")
             end
 
-            Operations.refresh_silent(config, function()
+            Operations.refresh_silent(function()
               -- Step 6: Set version switch specific state (not part of refresh)
               state.is_switching_version = false
               state.switching_to_version = nil
@@ -232,9 +232,9 @@ function M.switch_to_version(config, version, callback, render_callback)
 end
 
 -- Switch to latest (newest release tag)
-function M.switch_to_latest(config, callback, render_callback)
+function M.switch_to_latest(callback, render_callback)
   -- Get the latest version tag first
-  M.get_available_versions(config, function(tags, tags_err)
+  M.get_available_versions(function(tags, tags_err)
     if tags_err then
       callback(false, "Failed to fetch versions: " .. tags_err)
       return
@@ -249,13 +249,13 @@ function M.switch_to_latest(config, callback, render_callback)
     local latest_tag = tags[1]
 
     -- Use switch_to_version to do the actual switch (latest is just another version)
-    M.switch_to_version(config, latest_tag, callback, render_callback)
+    M.switch_to_version(latest_tag, callback, render_callback)
   end)
 end
 
 -- Show interactive version picker
-function M.show_version_picker(config)
-  M.get_available_versions(config, function(tags, err)
+function M.show_version_picker()
+  M.get_available_versions(function(tags, err)
     if err then
       vim.notify("Failed to fetch versions: " .. err, vim.log.levels.ERROR)
       return
@@ -317,7 +317,7 @@ function M.show_version_picker(config)
         return
       end
 
-      M.switch_to_version(config, selected, function(success, msg)
+      M.switch_to_version(selected, function(success, msg)
         if success then
           vim.notify(msg, vim.log.levels.INFO)
         else
@@ -329,7 +329,7 @@ function M.show_version_picker(config)
 end
 
 -- Get completion list for command
-function M.get_completion_list(_config, arglead)
+function M.get_completion_list(arglead)
   arglead = arglead or ""
 
   -- Return cached tags
@@ -344,15 +344,15 @@ function M.get_completion_list(_config, arglead)
 end
 
 -- Handle :DotfilesVersion command
-function M.handle_command(config, arg)
+function M.handle_command(arg)
   arg = arg or ""
 
   if arg == "" then
     -- No argument: show version picker
-    M.show_version_picker(config)
+    M.show_version_picker()
   else
     -- Switch to specific version
-    M.switch_to_version(config, arg, function(success, msg)
+    M.switch_to_version(arg, function(success, msg)
       if success then
         vim.notify(msg, vim.log.levels.INFO, { title = "Dotfiles Version" })
       else
@@ -362,8 +362,8 @@ function M.handle_command(config, arg)
   end
 end
 
-function M.set_current_tag(config, callback)
-  Git.get_head_tag(config, config.repo_path, function(tag, _err)
+function M.set_current_tag(callback)
+  Git.get_head_tag(function(tag, _err)
     local state = Status.state
     state.current_tag = tag
 

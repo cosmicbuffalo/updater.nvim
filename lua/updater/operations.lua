@@ -1,3 +1,4 @@
+local Config = require("updater.config")
 local Git = require("updater.git")
 local Status = require("updater.status")
 local Plugins = require("updater.plugins")
@@ -35,7 +36,7 @@ local function safe_callback(render_callback, mode)
 end
 
 local function refresh_step_6_get_plugin_updates(config, callback)
-  Plugins.get_plugin_updates(config, function(result)
+  Plugins.get_plugin_updates(function(result)
     Status.state.plugin_updates = result.all_updates
     Status.state.plugins_behind = result.plugins_behind
     Status.state.plugins_ahead = result.plugins_ahead
@@ -55,8 +56,6 @@ end
 
 local function refresh_step_5_get_commit_log(config, callback)
   Git.get_commit_log(
-    config,
-    config.repo_path,
     Status.state.current_branch,
     Status.state.ahead_count,
     Status.state.behind_count,
@@ -73,8 +72,6 @@ local function refresh_step_4_are_commits_in_branch(config, callback)
   Git.are_commits_in_branch(
     Status.state.remote_commits,
     Status.state.current_branch,
-    config,
-    config.repo_path,
     function(commits_in_branch)
       Status.state.commits_in_branch = commits_in_branch
 
@@ -84,7 +81,7 @@ local function refresh_step_4_are_commits_in_branch(config, callback)
 end
 
 local function refresh_step_3_get_remote_commits(config, callback)
-  Git.get_remote_commits_not_in_local(config, config.repo_path, Status.state.current_branch, function(remote_commits, _)
+  Git.get_remote_commits_not_in_local(Status.state.current_branch, function(remote_commits, _)
     Status.state.remote_commits = remote_commits
 
     -- In versioned_releases_only mode, needs_update is based on new release availability
@@ -100,7 +97,7 @@ local function refresh_step_3_get_remote_commits(config, callback)
 end
 
 local function refresh_step_2_repo_status(config, callback)
-  Git.get_repo_status(config, config.repo_path, function(status)
+  Git.get_repo_status(function(status)
     if status.error then
       Status.state.needs_update = false
       Status.state.has_plugin_updates = false
@@ -122,8 +119,8 @@ local function refresh_step_2_repo_status(config, callback)
 end
 
 -- Fetch GitHub release data (async, non-blocking)
-local function fetch_github_releases(config)
-  GitHub.fetch_releases(config, config.repo_path, function(releases, err)
+local function fetch_github_releases()
+  GitHub.fetch_releases(function(releases, err)
     if err then
       -- Silently ignore errors - GitHub data is optional enhancement
       Status.state.github_releases = {}
@@ -137,11 +134,11 @@ end
 -- Fetch release information for versioned_releases_only mode
 local function refresh_release_info(config, callback)
   -- Always fetch GitHub releases in the background (non-blocking)
-  fetch_github_releases(config)
+  fetch_github_releases()
 
   if not config.versioned_releases_only then
     -- Even when not in versioned_releases_only mode, get current tag for display
-    Git.get_head_tag(config, config.repo_path, function(tag, _)
+    Git.get_head_tag(function(tag, _)
       Status.state.current_tag = tag
       callback()
     end)
@@ -149,25 +146,25 @@ local function refresh_release_info(config, callback)
   end
 
   -- Check if we're on a detached HEAD
-  Git.is_detached_head(config, config.repo_path, function(is_detached, _)
+  Git.is_detached_head(function(is_detached, _)
     Status.state.is_detached_head = is_detached
 
     -- Get current release (latest tag reachable from HEAD)
-    Git.get_latest_release_for_ref(config, config.repo_path, "HEAD", function(current_release, _)
+    Git.get_latest_release_for_ref("HEAD", function(current_release, _)
       Status.state.current_release = current_release
 
       -- Also set current_tag if we're exactly on a tag
-      Git.get_head_tag(config, config.repo_path, function(head_tag, _)
+      Git.get_head_tag(function(head_tag, _)
         Status.state.current_tag = head_tag
 
         -- Get all version tags for comparison
-        Git.get_version_tags(config, config.repo_path, function(all_tags, _)
+        Git.get_version_tags(function(all_tags, _)
           -- Latest release is the first tag (sorted newest first)
           local latest_release = all_tags[1]
           Status.state.latest_remote_release = latest_release
 
           -- Get releases since current release
-          Git.get_releases_since_tag(config, config.repo_path, current_release, all_tags, function(releases_since, _)
+          Git.get_releases_since_tag(current_release, all_tags, function(releases_since, _)
             Status.state.releases_since_current = releases_since
 
             -- Determine if new release available based on whether there are releases since current
@@ -175,7 +172,7 @@ local function refresh_release_info(config, callback)
 
             -- Get releases before current release (older releases)
             local max_previous = Constants.MAX_SECTION_ITEMS
-            Git.get_releases_before_tag(config, config.repo_path, current_release, all_tags, max_previous, function(releases_before, _)
+            Git.get_releases_before_tag(current_release, all_tags, max_previous, function(releases_before, _)
               Status.state.releases_before_current = releases_before
 
               -- Get commits since release count (only meaningful if not exactly on a tag)
@@ -184,21 +181,21 @@ local function refresh_release_info(config, callback)
                 Status.state.commits_since_release = 0
                 Status.state.commits_since_release_list = {}
                 -- Still get release commit info for the "Releases since" section display
-                Git.get_tag_commit_info(config, config.repo_path, current_release, function(release_commit, _)
+                Git.get_tag_commit_info(current_release, function(release_commit, _)
                   Status.state.release_commit = release_commit
                   callback()
                 end)
               else
                 -- We have commits after the release
-                Git.get_commits_since_tag(config, config.repo_path, current_release, function(count, _)
+                Git.get_commits_since_tag(current_release, function(count, _)
                   Status.state.commits_since_release = count
 
                   -- Get the actual list of commits since release
-                  Git.get_commits_since_tag_list(config, config.repo_path, current_release, function(commits, _)
+                  Git.get_commits_since_tag_list(current_release, function(commits, _)
                     Status.state.commits_since_release_list = commits
 
                     -- Get the release tag commit info
-                    Git.get_tag_commit_info(config, config.repo_path, current_release, function(release_commit, _)
+                    Git.get_tag_commit_info(current_release, function(release_commit, _)
                       Status.state.release_commit = release_commit
                       callback()
                     end)
@@ -215,7 +212,7 @@ end
 
 local function start_refresh_logic(config, callback)
   -- Step 0: Get remote URL (for constructing GitHub links)
-  Git.get_remote_url(config, config.repo_path, function(remote_url, _)
+  Git.get_remote_url(function(remote_url, _)
     if remote_url then
       -- Convert SSH URL to HTTPS for browser links
       local https_url = remote_url
@@ -228,11 +225,11 @@ local function start_refresh_logic(config, callback)
     end
 
     -- Step 1: Get current commit
-    Git.get_current_commit(config, config.repo_path, function(commit, _)
+    Git.get_current_commit(function(commit, _)
       Status.state.current_commit = commit
 
       -- Step 1.5: Set current tag
-      Version.set_current_tag(config, function()
+      Version.set_current_tag(function()
         -- Step 1.6: Fetch release information
         refresh_release_info(config, function()
           refresh_step_2_repo_status(config, callback)
@@ -254,8 +251,8 @@ local function refresh_data(config, callback)
   start_refresh_logic(config, callback)
 end
 
-local function update_git_repo(config, operation_name, callback)
-  Git.update_repo(config, config.repo_path, function(success, message)
+local function update_git_repo(operation_name, callback)
+  Git.update_repo(function(success, message)
     if success then
       Status.state.needs_update = false
       Status.state.recently_updated_dotfiles = true
@@ -333,7 +330,8 @@ local function run_operation(options, render_callback)
   end
 end
 
-function M.refresh(config, render_callback)
+function M.refresh(render_callback)
+  local config = Config.get()
   run_operation({
     name = "refresh",
     status_field = "is_refreshing",
@@ -357,7 +355,8 @@ end
 
 -- Silent refresh that doesn't show spinner or status messages
 -- Used after version switch to reload state without UI interruption
-function M.refresh_silent(config, callback)
+function M.refresh_silent(callback)
+  local config = Config.get()
   refresh_data(config, function()
     Status.state.is_initial_load = false
     if callback then
@@ -366,7 +365,8 @@ function M.refresh_silent(config, callback)
   end)
 end
 
-function M.update_repo(config, render_callback)
+function M.update_repo(render_callback)
+  local config = Config.get()
   -- Block legacy updates in versioned_releases_only mode
   if config.versioned_releases_only then
     local msg = "Use 'U' to update to latest, 's' to switch versions or :DotfilesVersion to select a release."
@@ -385,7 +385,7 @@ function M.update_repo(config, render_callback)
       end,
     },
     operation = function(done)
-      update_git_repo(config, "update_repo", function(success)
+      update_git_repo("update_repo", function(success)
         if success then
           refresh_data(config, function()
             done(true)
@@ -398,7 +398,8 @@ function M.update_repo(config, render_callback)
   }, render_callback)
 end
 
-function M.update_dotfiles_and_plugins(config, render_callback)
+function M.update_dotfiles_and_plugins(render_callback)
+  local config = Config.get()
   -- Block legacy updates in versioned_releases_only mode
   if config.versioned_releases_only then
     local msg = "Use 'U' to update to latest, 's' to switch versions or :DotfilesVersion to select a release."
@@ -417,10 +418,10 @@ function M.update_dotfiles_and_plugins(config, render_callback)
       end,
     },
     operation = function(done)
-      update_git_repo(config, "update_dotfiles_and_plugins", function(success)
+      update_git_repo("update_dotfiles_and_plugins", function(success)
         if success then
           refresh_data(config, function()
-            Plugins.install_plugin_updates(config, render_callback)
+            Plugins.install_plugin_updates(render_callback)
             done(true)
           end)
         else
@@ -431,7 +432,8 @@ function M.update_dotfiles_and_plugins(config, render_callback)
   }, render_callback)
 end
 
-function M.check_updates_silent(config, callback)
+function M.check_updates_silent(callback)
+  local config = Config.get()
   if Status.state.debug_enabled then
     local result = get_debug_module().simulate_check_updates_silent()
     if callback then
@@ -443,14 +445,14 @@ function M.check_updates_silent(config, callback)
   -- For versioned_releases_only mode, check for new releases
   local function check_release_and_finish(finish_callback)
     if config.versioned_releases_only then
-      Git.get_latest_release_for_ref(config, config.repo_path, "HEAD", function(current_release, _)
+      Git.get_latest_release_for_ref("HEAD", function(current_release, _)
         Status.state.current_release = current_release
         -- Get all version tags to find releases since current
-        Git.get_version_tags(config, config.repo_path, function(all_tags, _)
+        Git.get_version_tags(function(all_tags, _)
           local latest_release = all_tags[1]
           Status.state.latest_remote_release = latest_release
           -- Check if there are releases newer than current
-          Git.get_releases_since_tag(config, config.repo_path, current_release, all_tags, function(releases_since, _)
+          Git.get_releases_since_tag(current_release, all_tags, function(releases_since, _)
             Status.state.releases_since_current = releases_since
             Status.state.has_new_release = #releases_since > 0
             Status.state.needs_update = Status.state.has_new_release
@@ -463,7 +465,7 @@ function M.check_updates_silent(config, callback)
     end
   end
 
-  Git.get_repo_status(config, config.repo_path, function(status)
+  Git.get_repo_status(function(status)
     if status.error then
       Status.state.needs_update = false
       Status.state.has_plugin_updates = false
@@ -484,7 +486,7 @@ function M.check_updates_silent(config, callback)
       Status.state.needs_update = status.behind > 0
     end
 
-    Plugins.get_plugin_updates(config, function(result)
+    Plugins.get_plugin_updates(function(result)
       Status.state.plugin_updates = result.all_updates
       Status.state.plugins_behind = result.plugins_behind
       Status.state.plugins_ahead = result.plugins_ahead
