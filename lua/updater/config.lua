@@ -127,10 +127,15 @@ local function validate_config(cfg)
   return errors
 end
 
-local function expand_repo_path(path)
+local function sanitize_repo_path(path)
   if type(path) ~= "string" then
-    return path
+    return nil, "repo_path must be a string"
   end
+
+  if path:match("[;&|`$(){}*?]") then
+    return nil, "repo_path contains dangerous characters"
+  end
+
   local expanded = vim.fn.expand(path)
   local resolved = vim.fn.resolve(expanded)
   return resolved
@@ -210,7 +215,12 @@ function M.setup_config(opts)
     return nil, error_msg
   end
 
-  merged_config.repo_path = expand_repo_path(merged_config.repo_path)
+  local sanitized_path, sanitize_err = sanitize_repo_path(merged_config.repo_path)
+  if not sanitized_path then
+    return nil, "updater.nvim: " .. sanitize_err
+  end
+
+  merged_config.repo_path = sanitized_path
 
   return merged_config
 end
