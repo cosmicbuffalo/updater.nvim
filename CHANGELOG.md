@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v2.0.0] - 2026-02-06
+## [v2.0.0-pre] - 2026-02-06
 
 ### Added
 - **Versioned Releases Mode** (`versioned_releases_only = true`): New release-based version management
@@ -45,6 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Commit-based updates without version pinning
   - Direct pull from main branch
   - Users should migrate to versioned releases mode
+- **Periodic checks**: Deprecated, will be removed in a future release
+- **Lualine integration support**: Deprecated, will be removed in a future release
+  - With the switch to semantic versioning, a new integration will be built eventually
 
 ## [v1.0.0] - 2026-01-20
 
