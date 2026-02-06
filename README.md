@@ -1,20 +1,17 @@
 # updater.nvim
 
-A Neovim plugin for managing and updating your dotfiles repository directly from within Neovim.
+A Neovim plugin for managing your dotfiles repository with semantic versioning. Pin your configuration to stable releases, switch between versions, and keep your plugins in sync with your dotfiles.
 
 ## Features
 
-- 🔄 Check for updates from your dotfiles repository
-- 🚀 Update your dotfiles with a single keystroke
-- 📊 Visual diff of local vs remote commits
-- 🎨 Simple TUI interface similar to Lazy.nvim
-- ⚡ Configurable timeouts for git operations
-- 🔔 Periodic update checking with configurable frequency
-- 📦 Plugin update integration with lazy.nvim
-- 🛡️ Robust configuration validation and error handling
-- 🏥 Built-in health checking for troubleshooting
-- 🔒 Security features to prevent shell injection
-- 💾 File-based caching to prevent redundant checks across multiple Neovim instances
+- 🏷️ **Version Management** - Pin your dotfiles to specific release tags (e.g., `v1.0.0`)
+- 🔄 **Automatic Plugin Sync** - Restore plugins from `lazy-lock.json` when switching versions
+- 🛠️ **Mason Tool Sync** - Restore mason tools from `mason-lock.json` (if mason-lock.nvim is installed)
+- 📋 **Release Notes** - View GitHub release titles and notes directly in Neovim
+- 🎨 **Visual TUI** - Browse releases, view changelogs, and switch versions with a simple interface
+- ⬆️ **Upgrade/Downgrade Detection** - Clear indication when switching to newer or older versions
+- 🔔 **Update Notifications** - Get notified when new releases are available
+- 🏥 **Health Checks** - Built-in diagnostics via `:checkhealth updater`
 
 ## Installation
 
@@ -24,39 +21,104 @@ A Neovim plugin for managing and updating your dotfiles repository directly from
 {
     "cosmicbuffalo/updater.nvim",
     opts = {
-        -- Configuration options (see below)
+        repo_path = vim.fn.stdpath("config"),
+        versioned_releases_only = true,  -- Recommended: use release-based updates
     },
 }
 ```
 
-## Configuration
+> **Important:** Disable lazy.nvim's automatic update checker to let updater.nvim manage your plugin versions:
+> ```lua
+> require("lazy").setup({
+>     spec = { ... },
+>     checker = { enabled = false },  -- Disable auto-update checking
+> })
+> ```
 
-The plugin comes with sensible defaults, but you can customize it:
+## Quick Start
+
+1. **Create a release tag** in your dotfiles repository:
+   ```bash
+   cd ~/.config/nvim
+   git add -A && git commit -m "Release v1.0.0"
+   git tag v1.0.0
+   git push origin main --tags
+   ```
+
+2. **Open the updater** with `<leader>e` or `:UpdaterOpen`
+
+3. **Switch versions** using the TUI or `:DotfilesVersion v1.0.0`
+
+## Version Management
+
+### The `:DotfilesVersion` Command
+
+```vim
+:DotfilesVersion              " Open interactive version picker
+:DotfilesVersion v1.2.0       " Switch to specific version
+:DotfilesVersion latest       " Switch to the latest release
+```
+
+### What Happens When You Switch Versions
+
+1. **Safety Check** - Verifies no uncommitted changes exist
+2. **Git Checkout** - Checks out the specified tag (detached HEAD)
+3. **Plugin Restore** - Runs `lazy.restore()` to sync plugins with `lazy-lock.json`
+4. **Mason Restore** - Runs `mason-lock.restore()` if mason-lock.nvim is installed
+5. **State Update** - Updates the TUI to reflect the new version
+
+### Version Modes
+
+- **Latest Mode** - Follow the newest release tag, get notified of new releases
+- **Pinned Mode** - Stay on a specific version, updates are blocked until you switch
+
+## Configuration
 
 ```lua
 require("updater").setup({
-    -- Path to the dotfiles repository (default: current Neovim config directory)
+    -- Path to your dotfiles repository
     repo_path = vim.fn.stdpath("config"),
-    
-    -- Utility to run commands with timeout (switch to gtimeout on macOS)
-    timeout_utility = "timeout",
-    
-    -- Title for the updater window
-    title = "Neovim Dotfiles Updater",
-    
-    -- How many commits to show in the log
-    log_count = 15,
-    
+
+    -- RECOMMENDED: Enable release-based version management
+    versioned_releases_only = true,
+
+    -- Pattern for version tags (default matches v1.0.0, v2.1.3, etc.)
+    version_tag_pattern = "v*",
+
     -- Main branch name
     main_branch = "main",
 
-    -- Git operation options
+    -- Window title
+    title = "Neovim Dotfiles Updater",
+
+    -- Keybindings
+    keymap = {
+        open = "<leader>e",       -- Open the updater TUI
+        update = "u",             -- Update to selected version
+        refresh = "r",            -- Refresh status
+        close = "q",              -- Close the TUI
+        install_plugins = "i",    -- Install plugin updates
+        update_all = "U",         -- Update dotfiles + plugins
+    },
+
+    -- Automatic update checking
+    check_updates_on_startup = {
+        enabled = true,
+    },
+
+    -- Periodic background checks
+    periodic_check = {
+        enabled = true,
+        frequency_minutes = 20,
+    },
+
+    -- Git options
     git = {
         rebase = true,
         autostash = true,
     },
-    
-    -- Git operation timeouts (in seconds)
+
+    -- Operation timeouts (seconds)
     timeouts = {
         fetch = 30,
         pull = 30,
@@ -65,247 +127,183 @@ require("updater").setup({
         status = 10,
         default = 20,
     },
-    
-    -- Keybindings 
-    keymap = {
-        -- normal mode keymaps
-        open = "<leader>e",       -- Opens the updater TUI
-        
-        -- TUI buffer-local keymaps
-        update = "u",             -- Updates dotfiles only
-        refresh = "r",            -- Refreshes status
-        close = "q",              -- Close the updater TUI
-        install_plugins = "i",    -- Install plugin updates via lazy restore
-        update_all = "U",         -- Update dotfiles + install plugin updates
-    },
-    
-    -- Startup check configuration
-    check_updates_on_startup = {
-        enabled = true,           -- Check for updates when Neovim starts
-    },
-    
-    -- Periodic update checking
-    periodic_check = {
-        enabled = true,           -- Enable periodic checking
-        frequency_minutes = 20,   -- Check every 20 minutes (default)
-    },
 
-    -- Excluded filetypes - prevents update checks when in these buffer types
+    -- Filetypes where update checks are skipped
     excluded_filetypes = { "gitcommit", "gitrebase" },
 })
 ```
 
-## Usage
+## TUI Keybindings
 
-### Opening the Updater
+When `versioned_releases_only = true`:
 
-- Press `<leader>e` (default) or run `:UpdaterOpen`
-- The updater will automatically check for updates when opened
+| Key | Action |
+|-----|--------|
+| `s` | Switch to the release under cursor |
+| `U` | Switch to the latest release |
+| `Enter` | Expand/collapse release details |
+| `r` | Refresh status |
+| `q` / `Esc` | Close the TUI |
+| `j` / `k` | Navigate between releases |
+| `y` | Copy release URL to clipboard |
 
-### Within the Updater Window
+## Commands
 
-- `U` - Update dotfiles + install plugin updates (recommended)
-- `u` - Update dotfiles only
-- `i` - Install plugin updates only (via lazy restore)
-- `r` - Refresh the status
-- `q` or `<Esc>` - Close the updater
+| Command | Description |
+|---------|-------------|
+| `:UpdaterOpen` | Open the updater TUI |
+| `:DotfilesVersion` | Open version picker or switch to a version |
+| `:DotfilesVersion <tag>` | Switch to a specific version |
+| `:DotfilesVersion latest` | Switch to the latest release |
+| `:UpdaterCheck` | Check for updates (shows notification) |
+| `:UpdaterStartChecking` | Start periodic update checking |
+| `:UpdaterStopChecking` | Stop periodic update checking |
+| `:checkhealth updater` | Run health diagnostics |
 
-### Commands
+## GitHub Release Integration
 
-- `:UpdaterOpen` - Open the updater interface
-- `:UpdaterCheck` - Check for updates and show notification
-- `:UpdaterStartChecking` - Start periodic update checking
-- `:UpdaterStopChecking` - Stop periodic update checking
-- `:UpdaterHealth` - Run health check for troubleshooting
+If you have the [GitHub CLI](https://cli.github.com/) (`gh`) installed and authenticated, updater.nvim will fetch release metadata from GitHub:
 
-### Automatic Update Checking
+- **Release Titles** - Displayed alongside version tags
+- **Release Notes** - Shown when expanding a release in the TUI
+- **Prerelease Tags** - Marked in the version picker
 
-The plugin supports two types of automatic checking:
+For public repositories, `curl` can be used as a fallback (without authentication).
 
-#### Startup Checking
-Check for updates when Neovim starts:
-```lua
-require("updater").setup({
-    check_updates_on_startup = { enabled = false }  -- Disable startup check
-})
-```
+Run `:checkhealth updater` to verify your GitHub API access.
 
-#### Periodic Checking
-Automatically check for updates every few minutes (only notifies when updates are available):
-```lua
-require("updater").setup({
-    periodic_check = {
-        enabled = true,
-        frequency_minutes = 60,  -- Check every hour
-    }
-})
-```
+## Lualine Integration
 
-#### Excluding Filetypes
-Prevent update checks from running when you're in certain buffer types (e.g., during git commits):
-```lua
-require("updater").setup({
-    excluded_filetypes = { "gitcommit", "gitrebase" }
-})
-```
-
-## Integrations
-
-### Lualine Integration
-
-Display update status in your lualine statusbar by adding this to your lualine config:
+Display update status in your statusline:
 
 ```lua
--- Basic integration
 require('lualine').setup({
-  sections = {
-    lualine_x = {
-      {
-        function()
-          return require('updater').status.get_update_text()
-        end,
-        cond = function()
-          return require('updater').status.has_updates()
-        end,
-        color = { fg = '#ff9e64' }, -- Orange color for updates
-        on_click = function()
-          require('updater').open()
-        end,
-      },
-      -- ... your other lualine_x components
+    sections = {
+        lualine_x = {
+            {
+                function()
+                    return require('updater').status.get_update_text('icon')
+                end,
+                cond = function()
+                    return require('updater').status.has_updates()
+                end,
+                color = { fg = '#ff9e64' },
+                on_click = function()
+                    require('updater').open()
+                end,
+            },
+        }
     }
-  }
 })
 ```
 
-#### Advanced Lualine Configuration
-
-```lua
--- With custom formatting and icons
-{
-  function()
-    return require('updater').status.get_update_text('icon') -- Use icon format
-  end,
-  cond = function()
-    return require('updater').status.has_updates()
-  end,
-  color = function()
-    local status = require('updater').status.get()
-    -- Different colors based on update type
-    if status.needs_update and status.has_plugin_updates then
-      return { fg = '#f7768e' } -- Red for both types
-    elseif status.needs_update then
-      return { fg = '#ff9e64' } -- Orange for dotfiles
-    else
-      return { fg = '#9ece6a' } -- Green for plugins only
-    end
-  end,
-  on_click = function()
-    require('updater').open()
-  end,
-}
-```
-
-#### Format Options
-
-The `get_update_text()` function supports different formats:
+### Format Options
 
 - `"default"`: "2 dotfiles, 3 plugins updates"
-- `"short"`: "2d 3p" 
+- `"short"`: "2d 3p"
 - `"icon"`: "󰚰 2 󰏖 3"
-
-See [examples/lualine.lua](examples/lualine.lua) for more complete integration examples.
-
-#### Available API Functions
-
-```lua
-local updater = require('updater')
-
--- Check if any updates are available
-updater.status.has_updates() -- returns boolean
-
--- Get total count of available updates
-updater.status.get_update_count() -- returns number
-
--- Get formatted update text
-updater.status.get_update_text('icon') -- returns string or empty string
-
--- Get detailed status information
-updater.status.get() -- returns table with all status info
-
--- Open the updater TUI
-updater.open()
-```
-
-## How It Works
-
-1. **Fetching**: The plugin fetches the latest changes from your remote repository
-2. **Comparison**: It compares your local branch with the remote main branch
-3. **Display**: Shows you what commits are available and what's different
-4. **Plugin Updates**: If lazy.nvim is available, it also checks for plugin updates
-5. **Update**: 
-   - `U` - Updates dotfiles + installs plugin updates
-   - `u` - Updates dotfiles only (pulls changes on main branch, merges on feature branches)
-   - `i` - Installs plugin updates only (via lazy restore)
 
 ## Requirements
 
-- Neovim >= 0.7.0
+- Neovim >= 0.10.0 (for `vim.system()` async support)
 - Git
-- `timeout` command (Linux) or `gtimeout` (macOS via Homebrew) - optional but recommended
-- lazy.nvim - optional, enables plugin update features
-- fidget.nvim - optional, enables unobtrusive progress indicators
+- `timeout` command (Linux) or `gtimeout` (macOS via Homebrew) - recommended
+- [lazy.nvim](https://github.com/folke/lazy.nvim) - for plugin management
+- [gh CLI](https://cli.github.com/) - optional, for GitHub release metadata
+- [mason-lock.nvim](https://github.com/zapling/mason-lock.nvim) - optional, for mason tool sync
+- [fidget.nvim](https://github.com/j-hui/fidget.nvim) - optional, for progress indicators
 
-## Testing
+## Creating Releases
 
-For local testing and development, see [TESTING.md](TESTING.md) for comprehensive testing methods including:
+To create a new release for your dotfiles:
 
-- **Debug Mode**: Simulate updates without git changes 
-- **Test Branch**: Create git scenarios with real update states  
-- **Test Repository**: Set up dedicated test environments
+```bash
+cd ~/.config/nvim
 
-### Debug Mode
+# Ensure lazy-lock.json is up to date
+nvim -c "Lazy sync" -c "qa"
 
-Debug functionality is loaded on-demand to keep the main plugin lightweight:
+# If using mason-lock.nvim, update the lockfile
+nvim -c "MasonLock" -c "qa"
 
-```vim
-:UpdaterDebugToggle        " Toggle debug mode (lazily loads)
-:UpdaterDebugSimulate 2 3  " Simulate 2 dotfile + 3 plugin updates  
-:UpdaterOpen               " Open TUI to see simulated updates
-:UpdaterDebugDisable       " Turn off debug mode
+# Commit and tag
+git add -A
+git commit -m "Release v1.0.0: Description of changes"
+git tag v1.0.0
+git push origin main --tags
 ```
 
-**Debug Commands**:
-- `:UpdaterDebugToggle` - Toggle debug mode on/off 
-- `:UpdaterDebugSimulate <dotfiles> <plugins>` - Enable debug mode and simulate specific update counts (both arguments required)
-- `:UpdaterDebugDisable` - Turn off debug mode
-
-**Behavior**:
-- Debug module loads only when `:UpdaterDebugToggle` is first used
-- `:UpdaterDebugToggle` sets default simulation values (2 dotfiles, 3 plugins)
-- Debug simulation affects both periodic checks and the updater TUI when enabled
-
-**Note**: Debug mode simulates updates without making actual git changes, useful for testing UI and workflows.
+Users of your dotfiles can then switch to this version:
+```vim
+:DotfilesVersion v1.0.0
+```
 
 ## Troubleshooting
 
-If you encounter issues, run `:UpdaterHealth` to diagnose common problems:
+Run `:checkhealth updater` to diagnose common issues:
 
-- Git repository validation
-- Git command availability  
-- Timeout utility check
-- Lazy.nvim integration status
-- Fidget.nvim integration status
-- Remote connectivity test
+- Git command availability
+- GitHub CLI authentication status
+- Timeout utility availability
+- Neovim version compatibility
+- lazy.nvim integration
+- fidget.nvim integration
 
-## Security
+## Debug Mode
 
-The plugin includes several security features:
+For testing without making git changes:
 
-- Input validation to prevent shell injection
-- Path sanitization for repository locations
-- Timeout protection for all git operations
-- Safe command execution with proper escaping
+```vim
+:UpdaterDebugToggle           " Toggle debug mode
+:UpdaterDebugSimulate 2 3     " Simulate 2 dotfile + 3 plugin updates
+:UpdaterDebugDisable          " Disable debug mode
+```
+
+---
+
+## Deprecated: Legacy Mode
+
+> **Deprecation Notice:** The legacy update mode (`versioned_releases_only = false`) is deprecated and will be removed in a future release. Please migrate to versioned releases mode.
+
+<details>
+<summary>Legacy Mode Documentation (Deprecated)</summary>
+
+### Legacy Configuration
+
+```lua
+require("updater").setup({
+    versioned_releases_only = false,  -- DEPRECATED
+    -- ... other options
+})
+```
+
+### Legacy TUI Keybindings
+
+| Key | Action |
+|-----|--------|
+| `U` | Update dotfiles + install plugin updates |
+| `u` | Update dotfiles only |
+| `i` | Install plugin updates only |
+| `r` | Refresh status |
+| `q` | Close |
+
+### Legacy Behavior
+
+In legacy mode, the plugin:
+- Compares local commits with the remote main branch
+- Pulls changes directly without version pinning
+- Shows commit logs instead of release information
+
+### Migration Guide
+
+1. Create release tags in your dotfiles repository
+2. Set `versioned_releases_only = true` in your config
+3. Disable lazy.nvim's checker: `checker = { enabled = false }`
+4. Use `:DotfilesVersion` to manage versions
+
+</details>
+
+---
 
 ## License
 

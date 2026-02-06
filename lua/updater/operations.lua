@@ -214,15 +214,29 @@ local function refresh_release_info(config, callback)
 end
 
 local function start_refresh_logic(config, callback)
-  -- Step 1: Get current commit
-  Git.get_current_commit(config, config.repo_path, function(commit, _)
-    Status.state.current_commit = commit
+  -- Step 0: Get remote URL (for constructing GitHub links)
+  Git.get_remote_url(config, config.repo_path, function(remote_url, _)
+    if remote_url then
+      -- Convert SSH URL to HTTPS for browser links
+      local https_url = remote_url
+      if remote_url:match("^git@") then
+        https_url = remote_url:gsub("^git@([^:]+):", "https://%1/"):gsub("%.git$", "")
+      else
+        https_url = remote_url:gsub("%.git$", "")
+      end
+      Status.state.remote_url = https_url
+    end
 
-    -- Step 1.5: Detect version mode
-    Version.detect_version_mode(config, function()
-      -- Step 1.6: Fetch release information
-      refresh_release_info(config, function()
-        refresh_step_2_repo_status(config, callback)
+    -- Step 1: Get current commit
+    Git.get_current_commit(config, config.repo_path, function(commit, _)
+      Status.state.current_commit = commit
+
+      -- Step 1.5: Set current tag
+      Version.set_current_tag(config, function()
+        -- Step 1.6: Fetch release information
+        refresh_release_info(config, function()
+          refresh_step_2_repo_status(config, callback)
+        end)
       end)
     end)
   end)
@@ -353,12 +367,11 @@ function M.refresh_silent(config, callback)
 end
 
 function M.update_repo(config, render_callback)
-  -- Block updates when pinned to a version
-  if Status.is_pinned_to_version() then
-    local msg = "Cannot update: pinned to "
-      .. Status.state.pinned_version
-      .. ". Use :DotfilesVersion latest first."
-    vim.notify(msg, vim.log.levels.WARN, { title = "Updater" })
+  -- Block legacy updates in versioned_releases_only mode
+  if config.versioned_releases_only then
+    local current = Status.get_version_display() or "current version"
+    local msg = "Use 'U' to update to latest, 's' to switch versions or :DotfilesVersion to select a release."
+    vim.notify(msg, vim.log.levels.INFO, { title = "Updater" })
     return
   end
 
@@ -387,12 +400,10 @@ function M.update_repo(config, render_callback)
 end
 
 function M.update_dotfiles_and_plugins(config, render_callback)
-  -- Block updates when pinned to a version
-  if Status.is_pinned_to_version() then
-    local msg = "Cannot update: pinned to "
-      .. Status.state.pinned_version
-      .. ". Use :DotfilesVersion latest first."
-    vim.notify(msg, vim.log.levels.WARN, { title = "Updater" })
+  -- Block legacy updates in versioned_releases_only mode
+  if config.versioned_releases_only then
+    local msg = "Use 'U' to update to latest, 's' to switch versions or :DotfilesVersion to select a release."
+    vim.notify(msg, vim.log.levels.INFO, { title = "Updater" })
     return
   end
 

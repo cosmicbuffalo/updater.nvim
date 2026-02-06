@@ -523,13 +523,14 @@ describe("ui module", function()
       assert.is_truthy(text:match("Seeing what's new on main"))
     end)
 
-    it("should not show U keybind on non-main branch during loading", function()
-      test_state.current_branch = "feature-branch"
+    it("should only show close keybind during loading", function()
       local lines = UI.generate_loading_state(test_state, test_config)
 
       local text = table.concat(lines, "\n")
-      assert.is_falsy(text:match("Update dotfiles %+ install plugin updates"))
-      assert.is_truthy(text:match("Pull latest main into branch"))
+      assert.is_truthy(text:match("Close window"))
+      -- Should not show other keybinds during loading
+      assert.is_falsy(text:match("Update dotfiles"))
+      assert.is_falsy(text:match("Refresh status"))
     end)
   end)
 

@@ -175,9 +175,10 @@ local function render_release_mode(config)
   local commits_since_start = #lines
   for i, line in ipairs(commits_since_section) do
     table.insert(lines, line)
-    -- Register commit lines as navigable (0-indexed)
-    if commits_since_lines[i] then
-      ReleaseDetails.register_navigable_line(commits_since_start + i - 1)
+    -- Register commit lines with their hash (0-indexed)
+    local commit_hash = commits_since_lines[i]
+    if commit_hash then
+      ReleaseDetails.register_commit_line(commits_since_start + i - 1, commit_hash)
     end
   end
 

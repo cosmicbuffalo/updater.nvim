@@ -220,8 +220,6 @@ function M.switch_to_version(config, version, callback, render_callback)
               state.switching_to_version = nil
               state.recently_switched_to = version
               state.switched_from_version = previous_release
-              state.version_mode = "pinned"
-              state.pinned_version = version
 
               Spinner.stop_loading_spinner()
               callback(true, "Switched to " .. version)
@@ -250,16 +248,8 @@ function M.switch_to_latest(config, callback, render_callback)
     -- First tag is the latest (sorted by version descending)
     local latest_tag = tags[1]
 
-    -- Use switch_to_version to do the actual switch
-    M.switch_to_version(config, latest_tag, function(success, msg)
-      if success then
-        -- Update state to reflect "latest" mode instead of "pinned"
-        local state = Status.state
-        state.version_mode = "latest"
-        state.pinned_version = nil
-      end
-      callback(success, msg)
-    end, render_callback)
+    -- Use switch_to_version to do the actual switch (latest is just another version)
+    M.switch_to_version(config, latest_tag, callback, render_callback)
   end)
 end
 
@@ -372,27 +362,10 @@ function M.handle_command(config, arg)
   end
 end
 
--- Detect version mode on startup/refresh
-function M.detect_version_mode(config, callback)
+function M.set_current_tag(config, callback)
   Git.get_head_tag(config, config.repo_path, function(tag, err)
     local state = Status.state
-
-    if tag then
-      -- HEAD is on a tag
-      state.current_tag = tag
-      -- If we're on a tag and not explicitly set to latest, assume pinned
-      if state.version_mode ~= "latest" or state.pinned_version == tag then
-        state.version_mode = "pinned"
-        state.pinned_version = tag
-      end
-    else
-      state.current_tag = nil
-      -- If not on a tag, we're on latest
-      if state.version_mode ~= "pinned" then
-        state.version_mode = "latest"
-        state.pinned_version = nil
-      end
-    end
+    state.current_tag = tag
 
     if callback then
       callback()

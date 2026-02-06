@@ -996,11 +996,20 @@ function M.get_release_details(config, repo_path, tag, prev_tag, callback)
     return
   end
 
+  -- Get Status for remote_url
+  local Status = require("updater.status")
+
+  -- Build release URL from remote_url if available
+  local release_url = nil
+  if Status.state.remote_url then
+    release_url = Status.state.remote_url .. "/releases/tag/" .. tag
+  end
+
   local details = {
     tag = tag,
     commit = nil,
     date = nil,
-    url = nil,
+    url = release_url,
     title = nil,
     description = nil,
     lines_added = 0,

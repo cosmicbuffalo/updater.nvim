@@ -548,7 +548,7 @@ function M.generate_release_keybindings(state, config)
   table.insert(keybinds, { key = "s", desc = "Switch to release" })
 
   -- y - Copy GitHub URL
-  table.insert(keybinds, { key = "y", desc = "Copy tag URL to clipboard" })
+  table.insert(keybinds, { key = "y", desc = "Copy URL to clipboard" })
 
   -- U - Update to latest release (always shown, but may be disabled)
   local u_label = "Update to latest release"
@@ -587,10 +587,10 @@ function M.generate_release_keybindings(state, config)
   return lines, keybind_data
 end
 
--- Returns: lines table, commit_lines table (maps relative line index to true for navigable lines)
+-- Returns: lines table, commit_lines table (maps relative line index to commit hash for navigable lines)
 function M.generate_commits_since_release_section(state, config)
   local lines = {}
-  local commit_lines = {} -- relative line index -> true for commit lines
+  local commit_lines = {} -- relative line index -> commit hash
 
   -- Only show if there are actual commits since the release (not on a tag)
   local commits_list = state.commits_since_release_list or {}
@@ -611,7 +611,7 @@ function M.generate_commits_since_release_section(state, config)
         line = line .. " by " .. commit.author
       end
       table.insert(lines, line)
-      commit_lines[#lines] = true
+      commit_lines[#lines] = commit.hash
     end
 
     table.insert(lines, "  ")
@@ -748,20 +748,11 @@ function M.generate_loading_state(state, config)
     "  Keybindings:",
   }
 
-  -- During loading, show appropriate keybinds based on branch
-  if is_on_main then
-    table.insert(lines, "    " .. config.keymap.update_all .. " - Update dotfiles + install plugin updates")
-  end
-  table.insert(
-    lines,
-    "    " .. config.keymap.update .. " - " .. (is_on_main and "Update dotfiles" or "Pull latest main into branch")
-  )
-  table.insert(lines, "    " .. config.keymap.install_plugins .. " - Install plugin updates (:Lazy restore)")
-  table.insert(lines, "    " .. config.keymap.refresh .. " - Refresh status")
+  -- During loading, only show close keybind (full keybinds appear after loading)
   table.insert(lines, "    " .. config.keymap.close .. " - Close window")
   table.insert(lines, "")
   table.insert(lines, "  Loading repository information...")
-  table.insert(lines, "  This may take a moment if checking remote updates.")
+  table.insert(lines, "  This may take a moment.")
   table.insert(lines, "")
 
   return lines
@@ -1372,24 +1363,10 @@ function M.apply_loading_state_highlighting(state, config)
   add_highlight(state.buffer, ns_id, "Directory", 1, 2, -1)
   add_highlight(state.buffer, ns_id, "WarningMsg", 3, 2, -1)
 
-  local is_on_main = state.current_branch == config.main_branch
-
-  -- Keybindings start at line 6 (0-indexed = 5), after "Keybindings:" header
+  -- Only the close keybind is shown during loading (line 6, 0-indexed)
   local keybind_line = 6
-
-  -- Build keybinds list based on branch
-  local keybinds = {}
-  if is_on_main then
-    table.insert(keybinds, config.keymap.update_all)
-  end
-  table.insert(keybinds, config.keymap.update)
-  table.insert(keybinds, config.keymap.install_plugins)
-  table.insert(keybinds, config.keymap.refresh)
-  table.insert(keybinds, config.keymap.close)
-
-  for i, key in ipairs(keybinds) do
-    add_highlight(state.buffer, ns_id, "Statement", keybind_line + i - 1, 4, 4 + #key)
-  end
+  local close_key = config.keymap.close
+  add_highlight(state.buffer, ns_id, "Statement", keybind_line, 4, 4 + #close_key)
 end
 
 function M.get_loading_spinner(state)

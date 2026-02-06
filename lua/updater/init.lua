@@ -121,6 +121,8 @@ function M.open()
       -- Get current cursor position (1-indexed in vim)
       local cursor_pos = vim.api.nvim_win_get_cursor(state.window)
       local cursor_line = cursor_pos[1] - 1 -- Convert to 0-indexed for line mapping
+
+      -- Check if cursor is on a release line
       local tag = ReleaseDetails.get_release_at_line(cursor_line)
       if tag then
         -- Get the release details to find the URL
@@ -130,16 +132,34 @@ function M.open()
           vim.fn.setreg("*", details.url)
           vim.notify("Copied: " .. details.url, vim.log.levels.INFO, { title = "Updater" })
         else
-          -- Construct URL from config if details not loaded
-          local remote_url = config.github_url or config.remote_url
+          -- Construct URL from state.remote_url
+          local remote_url = state.remote_url
           if remote_url then
-            local url = remote_url:gsub("%.git$", "") .. "/releases/tag/" .. tag
+            local url = remote_url .. "/releases/tag/" .. tag
             vim.fn.setreg("+", url)
             vim.fn.setreg("*", url)
             vim.notify("Copied: " .. url, vim.log.levels.INFO, { title = "Updater" })
           else
             vim.notify("Could not determine release URL", vim.log.levels.WARN, { title = "Updater" })
           end
+        end
+        return
+      end
+
+      -- Check if cursor is on a commit line
+      local commit_hash = ReleaseDetails.get_commit_at_line(cursor_line)
+      if commit_hash then
+        local remote_url = state.remote_url
+        if remote_url then
+          local url = remote_url .. "/commit/" .. commit_hash
+          vim.fn.setreg("+", url)
+          vim.fn.setreg("*", url)
+          vim.notify("Copied: " .. url, vim.log.levels.INFO, { title = "Updater" })
+        else
+          -- Just copy the commit hash if we can't build a URL
+          vim.fn.setreg("+", commit_hash)
+          vim.fn.setreg("*", commit_hash)
+          vim.notify("Copied commit: " .. commit_hash, vim.log.levels.INFO, { title = "Updater" })
         end
       end
     end,

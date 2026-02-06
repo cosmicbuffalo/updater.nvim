@@ -52,8 +52,6 @@ local state = {
   debug_simulate_plugins = 0,
 
   -- Version tracking state
-  version_mode = "latest", -- "latest" | "pinned"
-  pinned_version = nil, -- tag name when pinned
   current_tag = nil, -- tag if HEAD is exactly on one
   is_switching_version = false,
   switching_to_version = nil, -- target version during switch
@@ -79,6 +77,9 @@ local state = {
   -- GitHub release data (fetched from API)
   github_releases = {}, -- map of tag -> github release data (name, body, prerelease, etc.)
   github_releases_fetched = false, -- true once we've attempted to fetch
+
+  -- Repository info
+  remote_url = nil, -- git remote URL (for constructing GitHub links)
 }
 
 function M.stop_periodic_timer()
@@ -177,18 +178,9 @@ function M.get_update_text(format)
 end
 
 -- Version tracking helpers
-function M.is_pinned_to_version()
-  return state.version_mode == "pinned" and state.pinned_version ~= nil
-end
-
 function M.get_version_display()
-  if state.version_mode == "pinned" and state.pinned_version then
-    return state.pinned_version
-  elseif state.current_tag then
-    return state.current_tag
-  else
-    return "latest"
-  end
+  -- Return current tag if on one, otherwise nil
+  return state.current_tag
 end
 
 -- Release expansion helpers

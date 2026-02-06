@@ -272,7 +272,6 @@ describe("status module", function()
     end)
 
     it("should have version tracking state fields", function()
-      assert.is_not_nil(Status.state.version_mode)
       assert.is_not_nil(Status.state.expanded_releases)
       assert.is_not_nil(Status.state.release_details_cache)
       assert.is_not_nil(Status.state.fetching_release_details)
@@ -282,50 +281,18 @@ describe("status module", function()
 
   describe("version tracking helpers", function()
     before_each(function()
-      Status.state.version_mode = "latest"
-      Status.state.pinned_version = nil
       Status.state.current_tag = nil
     end)
 
-    describe("is_pinned_to_version", function()
-      it("should return false when in latest mode", function()
-        Status.state.version_mode = "latest"
-        Status.state.pinned_version = nil
-        assert.is_false(Status.is_pinned_to_version())
-      end)
-
-      it("should return false when pinned mode but no version", function()
-        Status.state.version_mode = "pinned"
-        Status.state.pinned_version = nil
-        assert.is_false(Status.is_pinned_to_version())
-      end)
-
-      it("should return true when pinned to a version", function()
-        Status.state.version_mode = "pinned"
-        Status.state.pinned_version = "v1.0.0"
-        assert.is_true(Status.is_pinned_to_version())
-      end)
-    end)
-
     describe("get_version_display", function()
-      it("should return 'latest' when in latest mode without tag", function()
-        Status.state.version_mode = "latest"
-        Status.state.pinned_version = nil
+      it("should return nil when no current tag", function()
         Status.state.current_tag = nil
-        assert.equals("latest", Status.get_version_display())
+        assert.is_nil(Status.get_version_display())
       end)
 
-      it("should return current_tag when in latest mode with tag", function()
-        Status.state.version_mode = "latest"
+      it("should return current_tag when on a tag", function()
         Status.state.current_tag = "v1.2.0"
         assert.equals("v1.2.0", Status.get_version_display())
-      end)
-
-      it("should return pinned_version when pinned", function()
-        Status.state.version_mode = "pinned"
-        Status.state.pinned_version = "v1.0.0"
-        Status.state.current_tag = "v1.0.0"
-        assert.equals("v1.0.0", Status.get_version_display())
       end)
     end)
   end)

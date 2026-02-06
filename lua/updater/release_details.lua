@@ -29,6 +29,10 @@ end
 -- This is rebuilt each time the buffer is rendered
 M.line_to_release = {}
 
+-- Map of buffer line numbers to commit hashes
+-- This is rebuilt each time the buffer is rendered
+M.line_to_commit = {}
+
 -- All navigable line numbers (sorted)
 M.navigable_lines = {}
 
@@ -41,6 +45,7 @@ M.all_tags = {}
 -- Clear the line mapping (called before re-rendering)
 function M.clear_line_mapping()
   M.line_to_release = {}
+  M.line_to_commit = {}
   M.navigable_lines = {}
   M.release_lines = {}
 end
@@ -52,9 +57,20 @@ function M.register_release_line(line_num, tag)
   table.insert(M.release_lines, line_num)
 end
 
--- Register a navigable line (not necessarily a release)
+-- Register a commit line (called during rendering)
+function M.register_commit_line(line_num, commit_hash)
+  M.line_to_commit[line_num] = commit_hash
+  table.insert(M.navigable_lines, line_num)
+end
+
+-- Register a navigable line (not necessarily a release or commit)
 function M.register_navigable_line(line_num)
   table.insert(M.navigable_lines, line_num)
+end
+
+-- Get commit hash at a specific line (0-indexed)
+function M.get_commit_at_line(line_num)
+  return M.line_to_commit[line_num]
 end
 
 -- Sort navigable lines (call after all lines registered)
