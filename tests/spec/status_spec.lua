@@ -270,5 +270,196 @@ describe("status module", function()
       assert.is_not_nil(Status.state.needs_update)
       assert.is_not_nil(Status.state.plugin_updates)
     end)
+
+    it("should have version tracking state fields", function()
+      assert.is_not_nil(Status.state.version_mode)
+      assert.is_not_nil(Status.state.expanded_releases)
+      assert.is_not_nil(Status.state.release_details_cache)
+      assert.is_not_nil(Status.state.fetching_release_details)
+      assert.is_not_nil(Status.state.github_releases)
+    end)
+  end)
+
+  describe("version tracking helpers", function()
+    before_each(function()
+      Status.state.version_mode = "latest"
+      Status.state.pinned_version = nil
+      Status.state.current_tag = nil
+    end)
+
+    describe("is_pinned_to_version", function()
+      it("should return false when in latest mode", function()
+        Status.state.version_mode = "latest"
+        Status.state.pinned_version = nil
+        assert.is_false(Status.is_pinned_to_version())
+      end)
+
+      it("should return false when pinned mode but no version", function()
+        Status.state.version_mode = "pinned"
+        Status.state.pinned_version = nil
+        assert.is_false(Status.is_pinned_to_version())
+      end)
+
+      it("should return true when pinned to a version", function()
+        Status.state.version_mode = "pinned"
+        Status.state.pinned_version = "v1.0.0"
+        assert.is_true(Status.is_pinned_to_version())
+      end)
+    end)
+
+    describe("get_version_display", function()
+      it("should return 'latest' when in latest mode without tag", function()
+        Status.state.version_mode = "latest"
+        Status.state.pinned_version = nil
+        Status.state.current_tag = nil
+        assert.equals("latest", Status.get_version_display())
+      end)
+
+      it("should return current_tag when in latest mode with tag", function()
+        Status.state.version_mode = "latest"
+        Status.state.current_tag = "v1.2.0"
+        assert.equals("v1.2.0", Status.get_version_display())
+      end)
+
+      it("should return pinned_version when pinned", function()
+        Status.state.version_mode = "pinned"
+        Status.state.pinned_version = "v1.0.0"
+        Status.state.current_tag = "v1.0.0"
+        assert.equals("v1.0.0", Status.get_version_display())
+      end)
+    end)
+  end)
+
+  describe("release expansion helpers", function()
+    before_each(function()
+      Status.state.expanded_releases = {}
+      Status.state.release_details_cache = {}
+      Status.state.fetching_release_details = {}
+    end)
+
+    describe("is_release_expanded", function()
+      it("should return false for non-expanded release", function()
+        assert.is_false(Status.is_release_expanded("v1.0.0"))
+      end)
+
+      it("should return true for expanded release", function()
+        Status.state.expanded_releases["v1.0.0"] = true
+        assert.is_true(Status.is_release_expanded("v1.0.0"))
+      end)
+    end)
+
+    describe("toggle_release_expansion", function()
+      it("should expand a collapsed release", function()
+        Status.toggle_release_expansion("v1.0.0")
+        assert.is_true(Status.is_release_expanded("v1.0.0"))
+      end)
+
+      it("should collapse an expanded release", function()
+        Status.state.expanded_releases["v1.0.0"] = true
+        Status.toggle_release_expansion("v1.0.0")
+        assert.is_false(Status.is_release_expanded("v1.0.0"))
+      end)
+    end)
+
+    describe("release_details_cache", function()
+      it("should get and set release details", function()
+        local details = { commit = "abc123", date = "2024-01-01" }
+        Status.set_release_details("v1.0.0", details)
+
+        local retrieved = Status.get_release_details("v1.0.0")
+        assert.equals("abc123", retrieved.commit)
+        assert.equals("2024-01-01", retrieved.date)
+      end)
+
+      it("should return nil for uncached release", function()
+        assert.is_nil(Status.get_release_details("v2.0.0"))
+      end)
+    end)
+
+    describe("fetching_release_details", function()
+      it("should track fetching state", function()
+        assert.is_false(Status.is_fetching_release_details("v1.0.0"))
+
+        Status.set_fetching_release_details("v1.0.0", true)
+        assert.is_true(Status.is_fetching_release_details("v1.0.0"))
+
+        Status.set_fetching_release_details("v1.0.0", false)
+        assert.is_false(Status.is_fetching_release_details("v1.0.0"))
+      end)
+    end)
+  end)
+
+  describe("GitHub release helpers", function()
+    before_each(function()
+      Status.state.github_releases = {}
+    end)
+
+    describe("get_github_release", function()
+      it("should return nil for unknown tag", function()
+        assert.is_nil(Status.get_github_release("v1.0.0"))
+      end)
+
+      it("should return release data for known tag", function()
+        Status.state.github_releases["v1.0.0"] = {
+          name = "Release 1.0.0",
+          body = "Release notes",
+          prerelease = false,
+        }
+
+        local release = Status.get_github_release("v1.0.0")
+        assert.equals("Release 1.0.0", release.name)
+        assert.equals("Release notes", release.body)
+        assert.is_false(release.prerelease)
+      end)
+    end)
+
+    describe("has_github_release", function()
+      it("should return false for unknown tag", function()
+        assert.is_false(Status.has_github_release("v1.0.0"))
+      end)
+
+      it("should return true for known tag", function()
+        Status.state.github_releases["v1.0.0"] = { name = "Test" }
+        assert.is_true(Status.has_github_release("v1.0.0"))
+      end)
+    end)
+
+    describe("is_prerelease", function()
+      it("should return falsy for unknown tag", function()
+        assert.is_falsy(Status.is_prerelease("v1.0.0"))
+      end)
+
+      it("should return false for non-prerelease", function()
+        Status.state.github_releases["v1.0.0"] = { prerelease = false }
+        assert.is_false(Status.is_prerelease("v1.0.0"))
+      end)
+
+      it("should return true for prerelease", function()
+        Status.state.github_releases["v1.0.0-pre"] = { prerelease = true }
+        assert.is_true(Status.is_prerelease("v1.0.0-pre"))
+      end)
+    end)
+
+    describe("get_release_title", function()
+      it("should return nil for unknown tag", function()
+        assert.is_nil(Status.get_release_title("v1.0.0"))
+      end)
+
+      it("should return release name", function()
+        Status.state.github_releases["v1.0.0"] = { name = "Version 1.0.0" }
+        assert.equals("Version 1.0.0", Status.get_release_title("v1.0.0"))
+      end)
+    end)
+
+    describe("get_release_body", function()
+      it("should return nil for unknown tag", function()
+        assert.is_nil(Status.get_release_body("v1.0.0"))
+      end)
+
+      it("should return release body", function()
+        Status.state.github_releases["v1.0.0"] = { body = "# Changelog\n- Feature 1" }
+        assert.equals("# Changelog\n- Feature 1", Status.get_release_body("v1.0.0"))
+      end)
+    end)
   end)
 end)

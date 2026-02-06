@@ -5,6 +5,7 @@ local state = {
   is_open = false,
   buffer = nil,
   window = nil,
+  window_width = 80, -- Default, updated when window opens
   is_initial_load = false,
 
   -- Operation states
@@ -74,6 +75,10 @@ local state = {
   expanded_releases = {}, -- map of tag -> true for expanded releases
   release_details_cache = {}, -- map of tag -> details object
   fetching_release_details = {}, -- map of tag -> true while fetching
+
+  -- GitHub release data (fetched from API)
+  github_releases = {}, -- map of tag -> github release data (name, body, prerelease, etc.)
+  github_releases_fetched = false, -- true once we've attempted to fetch
 }
 
 function M.stop_periodic_timer()
@@ -217,6 +222,30 @@ function M.set_fetching_release_details(tag, fetching)
   else
     state.fetching_release_details[tag] = nil
   end
+end
+
+-- GitHub release helpers
+function M.get_github_release(tag)
+  return state.github_releases[tag]
+end
+
+function M.has_github_release(tag)
+  return state.github_releases[tag] ~= nil
+end
+
+function M.is_prerelease(tag)
+  local release = state.github_releases[tag]
+  return release and release.prerelease == true
+end
+
+function M.get_release_title(tag)
+  local release = state.github_releases[tag]
+  return release and release.name or nil
+end
+
+function M.get_release_body(tag)
+  local release = state.github_releases[tag]
+  return release and release.body or nil
 end
 
 M.state = state

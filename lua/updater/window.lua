@@ -10,6 +10,9 @@ function M.create_window(config)
   local col = math.floor((vim.o.columns - width) / 2)
   local row = math.floor((vim.o.lines - height) / 2)
 
+  -- Store window width for dynamic separator generation
+  Status.state.window_width = width
+
   Status.state.buffer = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_option(Status.state.buffer, "bufhidden", "wipe")
 
@@ -56,10 +59,43 @@ function M.setup_keymaps(config, callbacks)
     if callbacks.copy_release_url then
       vim.keymap.set("n", "y", callbacks.copy_release_url, opts)
     end
+
+    -- Constrained navigation keymaps (j/k and arrows move between navigable lines only)
+    vim.keymap.set("n", "j", function()
+      local cur_line = vim.api.nvim_win_get_cursor(0)[1] - 1 -- 0-indexed
+      local next_line = ReleaseDetails.get_next_navigable_line(cur_line)
+      if next_line then
+        vim.api.nvim_win_set_cursor(0, { next_line + 1, 0 }) -- 1-indexed
+      end
+    end, opts)
+
+    vim.keymap.set("n", "k", function()
+      local cur_line = vim.api.nvim_win_get_cursor(0)[1] - 1 -- 0-indexed
+      local prev_line = ReleaseDetails.get_prev_navigable_line(cur_line)
+      if prev_line then
+        vim.api.nvim_win_set_cursor(0, { prev_line + 1, 0 }) -- 1-indexed
+      end
+    end, opts)
+
+    vim.keymap.set("n", "<Down>", function()
+      local cur_line = vim.api.nvim_win_get_cursor(0)[1] - 1
+      local next_line = ReleaseDetails.get_next_navigable_line(cur_line)
+      if next_line then
+        vim.api.nvim_win_set_cursor(0, { next_line + 1, 0 })
+      end
+    end, opts)
+
+    vim.keymap.set("n", "<Up>", function()
+      local cur_line = vim.api.nvim_win_get_cursor(0)[1] - 1
+      local prev_line = ReleaseDetails.get_prev_navigable_line(cur_line)
+      if prev_line then
+        vim.api.nvim_win_set_cursor(0, { prev_line + 1, 0 })
+      end
+    end, opts)
   end
 end
 
-function M.setup_autocmds(close_callback)
+function M.setup_autocmds(close_callback, config)
   vim.api.nvim_create_autocmd("BufLeave", {
     buffer = Status.state.buffer,
     callback = function()
@@ -67,6 +103,25 @@ function M.setup_autocmds(close_callback)
     end,
     once = true,
   })
+
+  -- Constrain cursor to navigable lines in versioned_releases_only mode
+  if config and config.versioned_releases_only then
+    vim.api.nvim_create_autocmd("CursorMoved", {
+      buffer = Status.state.buffer,
+      callback = function()
+        local cur_line = vim.api.nvim_win_get_cursor(0)[1] - 1 -- 0-indexed
+        local nearest = ReleaseDetails.get_nearest_navigable_line(cur_line)
+        if nearest and nearest ~= cur_line then
+          -- Defer to avoid recursion
+          vim.schedule(function()
+            if Status.state.buffer and vim.api.nvim_buf_is_valid(Status.state.buffer) then
+              pcall(vim.api.nvim_win_set_cursor, 0, { nearest + 1, 0 })
+            end
+          end)
+        end
+      end,
+    })
+  end
 end
 
 -- Render release-focused UI for versioned_releases_only mode
@@ -74,7 +129,6 @@ local function render_release_mode(config)
   local header, status_messages, status_lines_start = UI.generate_release_header(Status.state, config)
   local keybindings, keybind_data = UI.generate_release_keybindings(Status.state, config)
   local restart_reminder = UI.generate_restart_reminder_section(Status.state)
-  local commits_since = UI.generate_commits_since_release_section(Status.state, config)
   local current_release, current_release_lines = UI.generate_current_release_section(Status.state, config)
   local releases_since, releases_since_lines = UI.generate_releases_since_section(Status.state, config)
   local previous_releases, previous_releases_lines = UI.generate_previous_releases_section(Status.state, config)
@@ -116,8 +170,15 @@ local function render_release_mode(config)
     restart_reminder_line = #lines - 1
   end
 
-  for _, line in ipairs(commits_since) do
+  -- Track where commits_since section starts
+  local commits_since_section, commits_since_lines = UI.generate_commits_since_release_section(Status.state, config)
+  local commits_since_start = #lines
+  for i, line in ipairs(commits_since_section) do
     table.insert(lines, line)
+    -- Register commit lines as navigable (0-indexed)
+    if commits_since_lines[i] then
+      ReleaseDetails.register_navigable_line(commits_since_start + i - 1)
+    end
   end
 
   -- Track where releases_since section starts (shown above current release)
@@ -157,6 +218,9 @@ local function render_release_mode(config)
   for _, line in ipairs(plugins_ahead_info) do
     table.insert(lines, line)
   end
+
+  -- Sort navigable lines after all registrations
+  ReleaseDetails.sort_navigable_lines()
 
   vim.api.nvim_buf_set_lines(Status.state.buffer, 0, -1, false, lines)
   UI.apply_release_highlighting(
@@ -236,7 +300,10 @@ local function render_commit_mode(config)
   return lines
 end
 
-function M.render(config)
+-- opts.cursor_on_tag: optional tag to position cursor on after render
+function M.render(config, opts)
+  opts = opts or {}
+
   if not Status.state.buffer or not Status.state.is_open then
     return
   end
@@ -253,6 +320,37 @@ function M.render(config)
 
   vim.api.nvim_buf_set_option(Status.state.buffer, "modifiable", false)
   vim.api.nvim_win_set_height(Status.state.window, math.min(#lines + 1, Constants.MAX_WINDOW_HEIGHT_LINES))
+
+  -- Position cursor in versioned_releases_only mode
+  if config.versioned_releases_only then
+    local target_line = nil
+
+    -- If a specific tag was requested, find its line
+    if opts.cursor_on_tag then
+      for line_num, tag in pairs(ReleaseDetails.line_to_release) do
+        if tag == opts.cursor_on_tag then
+          target_line = line_num
+          break
+        end
+      end
+    end
+
+    -- Fall back to first release line, then first navigable line
+    if not target_line then
+      target_line = ReleaseDetails.get_first_release_line()
+    end
+    if not target_line and #ReleaseDetails.navigable_lines > 0 then
+      target_line = ReleaseDetails.navigable_lines[1]
+    end
+
+    if target_line then
+      -- Set cursor, keep window scrolled to top unless targeting a specific tag
+      pcall(vim.api.nvim_win_set_cursor, Status.state.window, { target_line + 1, 0 })
+      if not opts.cursor_on_tag then
+        vim.fn.winrestview({ topline = 1 })
+      end
+    end
+  end
 end
 
 function M.render_loading_state(config)

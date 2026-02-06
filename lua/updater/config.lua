@@ -1,17 +1,5 @@
 local M = {}
 
-local function validate_repo_path(cfg)
-  local errors = {}
-  if not cfg.repo_path or cfg.repo_path == "" then
-    table.insert(errors, "repo_path cannot be empty")
-  elseif type(cfg.repo_path) ~= "string" then
-    table.insert(errors, "repo_path must be a string")
-  elseif not vim.fn.isdirectory(cfg.repo_path) then
-    table.insert(errors, "repo_path directory does not exist: " .. cfg.repo_path)
-  end
-  return errors
-end
-
 local function validate_timeout_utility(cfg)
   local errors = {}
   if cfg.timeout_utility and type(cfg.timeout_utility) ~= "string" then
@@ -118,7 +106,6 @@ local function validate_config(cfg)
   local errors = {}
 
   local validators = {
-    validate_repo_path,
     validate_timeout_utility,
     validate_periodic_check,
     validate_timeouts,
@@ -140,15 +127,10 @@ local function validate_config(cfg)
   return errors
 end
 
-local function sanitize_repo_path(path)
+local function expand_repo_path(path)
   if type(path) ~= "string" then
-    return nil, "repo_path must be a string"
+    return path
   end
-
-  if path:match("[;&|`$(){}*?]") then
-    return nil, "repo_path contains dangerous characters"
-  end
-
   local expanded = vim.fn.expand(path)
   local resolved = vim.fn.resolve(expanded)
   return resolved
@@ -228,12 +210,7 @@ function M.setup_config(opts)
     return nil, error_msg
   end
 
-  local sanitized_path, sanitize_err = sanitize_repo_path(merged_config.repo_path)
-  if not sanitized_path then
-    return nil, "updater.nvim: " .. sanitize_err
-  end
-
-  merged_config.repo_path = sanitized_path
+  merged_config.repo_path = expand_repo_path(merged_config.repo_path)
 
   return merged_config
 end

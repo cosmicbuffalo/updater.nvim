@@ -736,23 +736,44 @@ function M.compare_version_tags(tag1, tag2)
     return 1
   end
 
-  -- Extract version numbers from tags like "v1.2.3"
+  -- Extract version numbers from tags like "v1.2.3" or "v1.2.3-pre"
   local function parse_version(tag)
-    local major, minor, patch = tag:match("v?(%d+)%.?(%d*)%.?(%d*)")
+    -- Match version with optional prerelease suffix
+    local major, minor, patch, prerelease = tag:match("v?(%d+)%.?(%d*)%.?(%d*)%-?(.*)")
     return {
       tonumber(major) or 0,
       tonumber(minor) or 0,
       tonumber(patch) or 0,
+      prerelease or "",
     }
   end
 
   local v1 = parse_version(tag1)
   local v2 = parse_version(tag2)
 
+  -- Compare major, minor, patch
   for i = 1, 3 do
     if v1[i] > v2[i] then
       return 1
     elseif v1[i] < v2[i] then
+      return -1
+    end
+  end
+
+  -- If versions are equal, compare prerelease (no prerelease > prerelease)
+  -- e.g., v1.0.0 > v1.0.0-pre, v1.0.0-pre2 > v1.0.0-pre1
+  local pre1 = v1[4]
+  local pre2 = v2[4]
+
+  if pre1 == "" and pre2 ~= "" then
+    return 1 -- No prerelease > prerelease
+  elseif pre1 ~= "" and pre2 == "" then
+    return -1 -- Prerelease < no prerelease
+  elseif pre1 ~= pre2 then
+    -- Simple string comparison for prerelease (works for pre1/pre2/etc)
+    if pre1 > pre2 then
+      return 1
+    elseif pre1 < pre2 then
       return -1
     end
   end
@@ -1051,63 +1072,72 @@ function M.get_release_details(config, repo_path, tag, prev_tag, callback)
     end
   )
 
-  -- 4. Get diff stats (if prev_tag exists)
+  -- 4. Get diff stats
+  -- If prev_tag exists, compare between tags; otherwise show stats for the tag's commit
+  local diff_cmd
   if prev_tag then
-    M.execute_command(
-      "git diff --shortstat " .. vim.fn.shellescape(prev_tag) .. ".." .. vim.fn.shellescape(tag),
-      "diff",
-      "Git diff stats",
-      config,
-      repo_path,
-      function(result, _)
-        if result then
-          -- Parse "X files changed, Y insertions(+), Z deletions(-)"
-          local added = result:match("(%d+) insertion")
-          local deleted = result:match("(%d+) deletion")
-          local changed = result:match("(%d+) file")
-          details.lines_added = tonumber(added) or 0
-          details.lines_deleted = tonumber(deleted) or 0
-          details.lines_changed = tonumber(changed) or 0
-        end
-        check_done()
-      end
-    )
+    diff_cmd = "git diff --shortstat " .. vim.fn.shellescape(prev_tag) .. ".." .. vim.fn.shellescape(tag)
   else
-    check_done()
+    -- For the first tag, show the commit's own stats
+    diff_cmd = "git show --shortstat --format='' " .. vim.fn.shellescape(tag)
   end
 
-  -- 5. Get plugin and mason lock changes (if prev_tag exists)
+  M.execute_command(
+    diff_cmd,
+    "diff",
+    "Git diff stats",
+    config,
+    repo_path,
+    function(result, _)
+      if result then
+        -- Parse "X files changed, Y insertions(+), Z deletions(-)"
+        local added = result:match("(%d+) insertion")
+        local deleted = result:match("(%d+) deletion")
+        local changed = result:match("(%d+) file")
+        details.lines_added = tonumber(added) or 0
+        details.lines_deleted = tonumber(deleted) or 0
+        details.lines_changed = tonumber(changed) or 0
+      end
+      check_done()
+    end
+  )
+
+  -- 5. Get plugin and mason lock changes
+  -- If prev_tag exists, compare between tags; otherwise show stats for the tag's commit
+  local numstat_cmd
   if prev_tag then
-    -- Get all file stats and filter for lockfiles
-    M.execute_command(
-      "git diff --numstat " .. vim.fn.shellescape(prev_tag) .. ".." .. vim.fn.shellescape(tag),
-      "diff",
-      "Git lockfile changes",
-      config,
-      repo_path,
-      function(result, _)
-        if result then
-          for line in result:gmatch("[^\n]+") do
-            local added, deleted, file = line:match("(%d+)%s+(%d+)%s+(.+)")
-            if file then
-              local changes = (tonumber(added) or 0) + (tonumber(deleted) or 0)
-              -- Check if this is a lazy lockfile (could be at any path)
-              if file:match("lazy%-lock%.json$") then
-                -- Each plugin change typically has 2 lines (old and new commit)
-                details.plugin_changes = math.floor(changes / 2)
-              -- Check if this is a mason lockfile
-              elseif file:match("mason%-lock%.json$") then
-                details.mason_changes = math.floor(changes / 2)
-              end
+    numstat_cmd = "git diff --numstat " .. vim.fn.shellescape(prev_tag) .. ".." .. vim.fn.shellescape(tag)
+  else
+    -- For the first tag, show the commit's own file stats
+    numstat_cmd = "git show --numstat --format='' " .. vim.fn.shellescape(tag)
+  end
+
+  M.execute_command(
+    numstat_cmd,
+    "diff",
+    "Git lockfile changes",
+    config,
+    repo_path,
+    function(result, _)
+      if result then
+        for line in result:gmatch("[^\n]+") do
+          local added, deleted, file = line:match("(%d+)%s+(%d+)%s+(.+)")
+          if file then
+            local changes = (tonumber(added) or 0) + (tonumber(deleted) or 0)
+            -- Check if this is a lazy lockfile (could be at any path)
+            if file:match("lazy%-lock%.json$") then
+              -- Each plugin change typically has 2 lines (old and new commit)
+              details.plugin_changes = math.floor(changes / 2)
+            -- Check if this is a mason lockfile
+            elseif file:match("mason%-lock%.json$") then
+              details.mason_changes = math.floor(changes / 2)
             end
           end
         end
-        check_done()
       end
-    )
-  else
-    check_done()
-  end
+      check_done()
+    end
+  )
 
   -- Construct GitHub URL
   M.get_remote_url(config, repo_path, function(remote_url, _)

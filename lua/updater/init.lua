@@ -22,11 +22,11 @@ function M.get_config()
 end
 local state = Status.state
 
-local function render_callback(mode)
+local function render_callback(mode, opts)
   if mode == "loading" then
     Window.render_loading_state(config)
   else
-    Window.render(config)
+    Window.render(config, opts)
   end
 end
 
@@ -103,14 +103,18 @@ function M.open()
           vim.notify("Already on " .. tag, vim.log.levels.ERROR, { title = "Updater" })
           return
         end
+        -- Create a callback that positions cursor on the switched-to tag
+        local switch_render_callback = function(mode)
+          render_callback(mode, { cursor_on_tag = tag })
+        end
         Version.switch_to_version(config, tag, function(success, msg)
           if success then
-            -- Just render to show the success message, don't refresh
-            render_callback()
+            -- Render with cursor on the tag we switched to
+            switch_render_callback()
           else
             vim.notify(msg, vim.log.levels.ERROR, { title = "Updater" })
           end
-        end, render_callback)
+        end, switch_render_callback)
       end
     end,
     copy_release_url = function()
@@ -141,7 +145,7 @@ function M.open()
     end,
   })
 
-  Window.setup_autocmds(M.close)
+  Window.setup_autocmds(M.close, config)
 
   if Status.has_cached_data() then
     Window.render(config)

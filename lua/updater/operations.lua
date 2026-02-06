@@ -6,6 +6,7 @@ local Spinner = require("updater.spinner")
 local Cache = require("updater.cache")
 local Version = require("updater.version")
 local Constants = require("updater.constants")
+local GitHub = require("updater.github")
 local M = {}
 
 local debug_module = nil
@@ -120,8 +121,24 @@ local function refresh_step_2_repo_status(config, callback)
   end)
 end
 
+-- Fetch GitHub release data (async, non-blocking)
+local function fetch_github_releases(config)
+  GitHub.fetch_releases(config, config.repo_path, function(releases, err)
+    if err then
+      -- Silently ignore errors - GitHub data is optional enhancement
+      Status.state.github_releases = {}
+    else
+      Status.state.github_releases = releases
+    end
+    Status.state.github_releases_fetched = true
+  end)
+end
+
 -- Fetch release information for versioned_releases_only mode
 local function refresh_release_info(config, callback)
+  -- Always fetch GitHub releases in the background (non-blocking)
+  fetch_github_releases(config)
+
   if not config.versioned_releases_only then
     -- Even when not in versioned_releases_only mode, get current tag for display
     Git.get_head_tag(config, config.repo_path, function(tag, _)

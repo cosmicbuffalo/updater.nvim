@@ -23,25 +23,12 @@ describe("config module", function()
       assert.equals(20, config.log_count)
     end)
 
-    it("should return error for empty repo_path", function()
-      local config, err = Config.setup_config({
-        repo_path = "",
-      })
-
-      assert.is_nil(config)
-      assert.is_not_nil(err)
-      assert.is_truthy(err:match("repo_path"))
-    end)
-
-    it("should accept non-existent repo_path (validation is lazy)", function()
-      -- Note: Git validation is deferred to first use, so config setup succeeds
-      -- even with a non-existent path. The path validation only checks for
-      -- dangerous characters, not existence.
+    it("should accept any repo_path without validation", function()
+      -- repo_path is not validated at config time - errors will surface on first use
       local config, err = Config.setup_config({
         repo_path = "/nonexistent/path/that/does/not/exist",
       })
 
-      -- Config setup should succeed - git validation happens lazily on first use
       assert.is_not_nil(config)
       assert.is_nil(err)
       assert.equals("/nonexistent/path/that/does/not/exist", config.repo_path)
@@ -124,16 +111,6 @@ describe("config module", function()
       assert.is_not_nil(config.repo_path)
       -- Should be an absolute path
       assert.is_truthy(config.repo_path:match("^/"))
-    end)
-
-    it("should reject dangerous characters in repo_path", function()
-      local config, err = Config.setup_config({
-        repo_path = "/tmp/test; rm -rf /",
-      })
-
-      assert.is_nil(config)
-      assert.is_not_nil(err)
-      assert.is_truthy(err:match("dangerous"))
     end)
 
     it("should have git options configured", function()

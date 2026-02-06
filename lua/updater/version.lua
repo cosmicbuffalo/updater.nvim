@@ -283,8 +283,20 @@ function M.show_version_picker(config)
 
     for i, tag in ipairs(tags) do
       local label = tag
+
+      -- Add release title from GitHub API if available
+      local release_title = Status.get_release_title(tag)
+      if release_title and release_title ~= "" and release_title ~= tag then
+        label = label .. " - " .. release_title
+      end
+
+      -- Build annotations
       local annotations = {}
 
+      -- Add prerelease indicator if from GitHub API
+      if Status.is_prerelease(tag) then
+        table.insert(annotations, "prerelease")
+      end
       if tag == latest_tag then
         table.insert(annotations, "latest")
       end
