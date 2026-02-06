@@ -572,7 +572,7 @@ function M.checkout_tag(config, repo_path, tag_name, callback)
     "Git checkout tag",
     config,
     repo_path,
-    function(result, err)
+    function(_result, err)
       if err then
         callback(false, "Failed to checkout tag: " .. (err or "unknown error"))
       else
@@ -967,26 +967,6 @@ function M.is_detached_head(config, repo_path, callback)
       callback(vim.trim(result or "") == "detached", nil)
     end
   )
-end
-
--- Get the previous tag before a given tag (for diff comparison)
-function M.get_previous_tag(config, repo_path, tag, all_tags, callback)
-  if not tag or not all_tags then
-    callback(nil, nil)
-    return
-  end
-
-  local found_current = false
-  for _, t in ipairs(all_tags) do
-    if found_current then
-      callback(t, nil)
-      return
-    end
-    if t == tag then
-      found_current = true
-    end
-  end
-  callback(nil, nil) -- No previous tag found
 end
 
 -- Get release details for a tag

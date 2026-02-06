@@ -369,7 +369,6 @@ end
 function M.update_repo(config, render_callback)
   -- Block legacy updates in versioned_releases_only mode
   if config.versioned_releases_only then
-    local current = Status.get_version_display() or "current version"
     local msg = "Use 'U' to update to latest, 's' to switch versions or :DotfilesVersion to select a release."
     vim.notify(msg, vim.log.levels.INFO, { title = "Updater" })
     return

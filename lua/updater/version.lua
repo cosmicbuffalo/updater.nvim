@@ -271,7 +271,7 @@ function M.show_version_picker(config)
     local latest_tag = tags[1] -- First tag is latest (sorted by version descending)
     local formatted_options = {}
 
-    for i, tag in ipairs(tags) do
+    for _, tag in ipairs(tags) do
       local label = tag
 
       -- Add release title from GitHub API if available
@@ -329,7 +329,7 @@ function M.show_version_picker(config)
 end
 
 -- Get completion list for command
-function M.get_completion_list(config, arglead)
+function M.get_completion_list(_config, arglead)
   arglead = arglead or ""
 
   -- Return cached tags
@@ -363,7 +363,7 @@ function M.handle_command(config, arg)
 end
 
 function M.set_current_tag(config, callback)
-  Git.get_head_tag(config, config.repo_path, function(tag, err)
+  Git.get_head_tag(config, config.repo_path, function(tag, _err)
     local state = Status.state
     state.current_tag = tag
 

@@ -131,7 +131,7 @@ function M.check()
     })
   end
 
-  local ok, updater = pcall(require, "updater")
+  local ok, _ = pcall(require, "updater")
   if not ok then
     health.error("Failed to load updater module")
     return

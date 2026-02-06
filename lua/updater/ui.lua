@@ -402,7 +402,7 @@ end
 -- Release-focused UI (for versioned_releases_only mode)
 -- ============================================================================
 
-local function generate_release_branch_status(state, config)
+local function generate_release_branch_status(state)
   local lines = {}
 
   -- Show branch info with detached HEAD handling
@@ -424,7 +424,7 @@ local function generate_release_branch_status(state, config)
   return lines
 end
 
-local function generate_release_status_messages(state, config)
+local function generate_release_status_messages(state)
   local messages = {}
 
   if state.is_updating then
@@ -509,11 +509,11 @@ local function generate_release_status_messages(state, config)
   return messages
 end
 
-function M.generate_release_header(state, config)
+function M.generate_release_header(state, _config)
   local header = { "" }
 
   -- Add release-focused branch status
-  local branch_lines = generate_release_branch_status(state, config)
+  local branch_lines = generate_release_branch_status(state)
   for _, line in ipairs(branch_lines) do
     table.insert(header, line)
   end
@@ -521,7 +521,7 @@ function M.generate_release_header(state, config)
   table.insert(header, "")
 
   -- Add release status messages
-  local status_messages = generate_release_status_messages(state, config)
+  local status_messages = generate_release_status_messages(state)
   local status_lines_start = #header
   for _, msg in ipairs(status_messages) do
     table.insert(header, msg.text)
@@ -588,7 +588,7 @@ function M.generate_release_keybindings(state, config)
 end
 
 -- Returns: lines table, commit_lines table (maps relative line index to commit hash for navigable lines)
-function M.generate_commits_since_release_section(state, config)
+function M.generate_commits_since_release_section(state, _config)
   local lines = {}
   local commit_lines = {} -- relative line index -> commit hash
 
@@ -622,7 +622,7 @@ end
 
 -- Generate current release section (always shown if we have a current release)
 -- Returns: lines table, release_lines table (maps relative line index to tag)
-function M.generate_current_release_section(state, config)
+function M.generate_current_release_section(state, _config)
   local lines = {}
   local release_lines = {} -- relative line index -> tag
 
@@ -661,7 +661,7 @@ end
 
 -- Generate releases since section (only releases newer than current)
 -- Returns: lines table, release_lines table (maps relative line index to tag)
-function M.generate_releases_since_section(state, config)
+function M.generate_releases_since_section(state, _config)
   local lines = {}
   local release_lines = {} -- relative line index -> tag
   local releases_since = state.releases_since_current or {}
@@ -695,7 +695,7 @@ end
 
 -- Generate previous releases section with expansion support
 -- Returns: lines table, release_lines table (maps relative line index to tag)
-function M.generate_previous_releases_section(state, config)
+function M.generate_previous_releases_section(state, _config)
   local lines = {}
   local release_lines = {} -- relative line index -> tag
   local releases_before = state.releases_before_current or {}
@@ -1015,7 +1015,6 @@ local function highlight_commits_since_release(buffer, ns_id, state)
   -- Start after title (separator is above title now)
   local commit_start_line = section_line + 1
   local commits_list = state.commits_since_release_list or {}
-  local current_hash = state.current_commit or ""
 
   -- Highlight commits since release (yellow commit SHAs)
   for i, commit in ipairs(commits_list) do
@@ -1054,7 +1053,7 @@ end
 
 -- Helper to highlight a release line with fold indicator
 -- tag_hl_group: highlight group for the tag (e.g., "String", "FloatTitle"), or nil for default
-local function highlight_release_line_with_indicator(buffer, ns_id, line_num, release, tag_hl_group)
+local function highlight_release_line_with_indicator(buffer, ns_id, line_num, _release, tag_hl_group)
   local line = vim.api.nvim_buf_get_lines(buffer, line_num, line_num + 1, false)
   if not line or not line[1] then
     return
@@ -1335,7 +1334,7 @@ end
 
 function M.apply_release_highlighting(
   state,
-  config,
+  _config,
   status_messages,
   status_lines_start,
   keybindings_start,
