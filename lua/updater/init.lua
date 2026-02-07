@@ -54,6 +54,15 @@ function M.open()
     update_all = function()
       if config.versioned_releases_only then
         -- In versioned releases mode, switch to the latest release tag
+        -- Guard: don't switch if already on latest or ahead of latest
+        if not state.has_new_release then
+          if state.current_tag and state.current_release == state.current_tag then
+            vim.notify("Already on latest release", vim.log.levels.INFO, { title = "Updater" })
+          else
+            vim.notify("No newer release available", vim.log.levels.INFO, { title = "Updater" })
+          end
+          return
+        end
         -- Same behavior as hitting 's' on the latest release
         Version.switch_to_latest(function(success, msg)
           if success then
@@ -96,9 +105,9 @@ function M.open()
       local cursor_line = cursor_pos[1] - 1 -- Convert to 0-indexed for line mapping
       local tag = ReleaseDetails.get_release_at_line(cursor_line)
       if tag then
-        -- Check if already on this release
-        if state.current_release == tag then
-          vim.notify("Already on " .. tag, vim.log.levels.ERROR, { title = "Updater" })
+        -- Check if already pinned to this tag (only when actually on this exact tag)
+        if state.current_tag == tag then
+          vim.notify("Already on " .. tag, vim.log.levels.INFO, { title = "Updater" })
           return
         end
         -- Create a callback that positions cursor on the switched-to tag

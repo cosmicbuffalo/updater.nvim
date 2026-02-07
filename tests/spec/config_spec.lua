@@ -23,8 +23,9 @@ describe("config module", function()
       assert.equals(20, config.log_count)
     end)
 
-    it("should accept any repo_path without validation", function()
-      -- repo_path is not validated at config time - errors will surface on first use
+    it("should accept repo_path without checking existence", function()
+      -- repo_path existence is not validated at config time - errors will surface on first use
+      -- Note: type and character sanitization still occurs
       local config, err = Config.setup_config({
         repo_path = "/nonexistent/path/that/does/not/exist",
       })

@@ -818,10 +818,33 @@ end
 
 local function highlight_restart_reminder(buffer, ns_id, state, restart_reminder_line)
   if state.recently_updated_dotfiles or state.recently_updated_plugins then
-    add_highlight(buffer, ns_id, "WarningMsg", restart_reminder_line, 2, -1) -- "⚠️  Restart Recommended"
-    add_highlight(buffer, ns_id, "DiagnosticInfo", restart_reminder_line + 6, 2, 6) -- "💡 Tip:" emoji
-    add_highlight(buffer, ns_id, "String", restart_reminder_line + 6, 7, 11) -- "Tip:" text
-    add_highlight(buffer, ns_id, "Comment", restart_reminder_line + 9, 2, -1) -- "Commands:" line
+    -- Highlight "⚠️  Restart Recommended" line
+    add_highlight(buffer, ns_id, "WarningMsg", restart_reminder_line, 2, -1)
+
+    -- Search for the tip and commands lines dynamically instead of using hard-coded offsets
+    local line_count = vim.api.nvim_buf_line_count(buffer)
+    local search_end = math.min(restart_reminder_line + 12, line_count - 1)
+
+    for i = restart_reminder_line + 1, search_end do
+      local lines = vim.api.nvim_buf_get_lines(buffer, i, i + 1, false)
+      if lines and lines[1] then
+        local line = lines[1]
+        -- Find "💡 Tip:" line
+        if line:find("💡 Tip:") then
+          local tip_start = line:find("💡")
+          if tip_start then
+            add_highlight(buffer, ns_id, "DiagnosticInfo", i, tip_start - 1, tip_start + 3)
+            local tip_text_start = line:find("Tip:")
+            if tip_text_start then
+              add_highlight(buffer, ns_id, "String", i, tip_text_start - 1, tip_text_start + 3)
+            end
+          end
+        -- Find "Commands:" line
+        elseif line:find("Commands:") then
+          add_highlight(buffer, ns_id, "Comment", i, 2, -1)
+        end
+      end
+    end
   end
 end
 

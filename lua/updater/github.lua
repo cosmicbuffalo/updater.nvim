@@ -15,20 +15,27 @@ local releases_cache = {
 --   https://github.com/owner/repo
 --   https://github.com/owner/repo.git
 --   git@github.com:owner/repo.git
+-- Note: Repo names can contain dots (e.g., my.repo)
 function M.parse_github_url(url)
   if not url then
     return nil, nil
   end
 
-  -- HTTPS format
-  local owner, repo = url:match("github%.com/([^/]+)/([^/%.]+)")
+  -- HTTPS format - match full repo segment, then strip optional .git suffix
+  local owner, repo = url:match("github%.com/([^/]+)/([^/]+)$")
+  if not owner then
+    -- Try without end anchor for URLs with trailing content
+    owner, repo = url:match("github%.com/([^/]+)/([^/%s]+)")
+  end
   if owner and repo then
+    repo = repo:gsub("%.git$", "")
     return owner, repo
   end
 
   -- SSH format
-  owner, repo = url:match("github%.com:([^/]+)/([^/%.]+)")
+  owner, repo = url:match("github%.com:([^/]+)/([^/%s]+)")
   if owner and repo then
+    repo = repo:gsub("%.git$", "")
     return owner, repo
   end
 
