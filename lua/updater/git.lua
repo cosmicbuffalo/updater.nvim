@@ -471,8 +471,7 @@ function M.update_repo(callback)
           -- Step 4: Execute update command
           execute_update_command(current_branch, has_uncommitted, function(result, err, timeout_key)
             -- Step 5: Handle result
-            local success, message, rollback_needed =
-              handle_update_result(current_branch, result, err, timeout_key)
+            local success, message, rollback_needed = handle_update_result(current_branch, result, err, timeout_key)
 
             -- Step 6: Rollback if needed
             if rollback_needed then
@@ -551,27 +550,30 @@ function M.get_version_tags(callback)
   local config = Config.get()
   local pattern = config.version_tag_pattern or "v*"
   -- Fetch tags first, then list them sorted by version
-  M.execute_command("git fetch --tags --quiet && git tag -l " .. vim.fn.shellescape(pattern) .. " --sort=-version:refname", {
-    timeout_key = "status",
-    operation_name = "Git tag list",
-    callback = function(result, err)
-      if err then
-        callback({}, err)
-        return
-      end
+  M.execute_command(
+    "git fetch --tags --quiet && git tag -l " .. vim.fn.shellescape(pattern) .. " --sort=-version:refname",
+    {
+      timeout_key = "status",
+      operation_name = "Git tag list",
+      callback = function(result, err)
+        if err then
+          callback({}, err)
+          return
+        end
 
-      local tags = {}
-      if result then
-        for line in result:gmatch("[^\r\n]+") do
-          local tag = vim.trim(line)
-          if tag ~= "" then
-            table.insert(tags, tag)
+        local tags = {}
+        if result then
+          for line in result:gmatch("[^\r\n]+") do
+            local tag = vim.trim(line)
+            if tag ~= "" then
+              table.insert(tags, tag)
+            end
           end
         end
-      end
-      callback(tags, nil)
-    end,
-  })
+        callback(tags, nil)
+      end,
+    }
+  )
 end
 
 -- Check if HEAD is on a tag, returns tag name or nil
@@ -712,23 +714,26 @@ function M.get_latest_release_for_ref(ref, callback)
   local config = Config.get()
   ref = ref or "HEAD"
   local pattern = config.version_tag_pattern or "v*"
-  M.execute_command("git describe --tags --abbrev=0 --match " .. vim.fn.shellescape(pattern) .. " " .. ref .. " 2>/dev/null || echo ''", {
-    timeout_key = "status",
-    operation_name = "Git release check",
-    callback = function(result, err)
-      if err then
-        callback(nil, err)
-        return
-      end
+  M.execute_command(
+    "git describe --tags --abbrev=0 --match " .. vim.fn.shellescape(pattern) .. " " .. ref .. " 2>/dev/null || echo ''",
+    {
+      timeout_key = "status",
+      operation_name = "Git release check",
+      callback = function(result, err)
+        if err then
+          callback(nil, err)
+          return
+        end
 
-      local tag = result and vim.trim(result) or ""
-      if tag == "" then
-        callback(nil, nil)
-      else
-        callback(tag, nil)
-      end
-    end,
-  })
+        local tag = result and vim.trim(result) or ""
+        if tag == "" then
+          callback(nil, nil)
+        else
+          callback(tag, nil)
+        end
+      end,
+    }
+  )
 end
 
 -- Count commits between a tag and HEAD (commits since release)
@@ -1138,9 +1143,7 @@ function M.get_release_details(tag, prev_tag, callback)
   M.get_remote_url(function(remote_url, _)
     if remote_url then
       -- Convert git URL to HTTPS URL for releases
-      local https_url = remote_url
-        :gsub("git@github%.com:", "https://github.com/")
-        :gsub("%.git$", "")
+      local https_url = remote_url:gsub("git@github%.com:", "https://github.com/"):gsub("%.git$", "")
       details.url = https_url .. "/releases/tag/" .. tag
     end
   end)

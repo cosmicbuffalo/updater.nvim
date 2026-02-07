@@ -284,8 +284,8 @@ function M.generate_detail_lines(tag, indent, commit_hash, commit_message, commi
   -- Diff stats
   if details.lines_added > 0 or details.lines_deleted > 0 then
     local file_word = details.lines_changed == 1 and "file" or "files"
-    local diff_str = string.format("+%d/-%d (%d %s)",
-      details.lines_added, details.lines_deleted, details.lines_changed, file_word)
+    local diff_str =
+      string.format("+%d/-%d (%d %s)", details.lines_added, details.lines_deleted, details.lines_changed, file_word)
     add_line("diff", diff_str)
   else
     add_line("diff", "no changes")

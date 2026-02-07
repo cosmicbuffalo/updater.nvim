@@ -78,10 +78,8 @@ function M.fetch_releases(callback)
     else
       -- Use curl (works with public repos only)
       local api_url = string.format("https://api.github.com/repos/%s/%s/releases", owner, repo)
-      cmd = string.format(
-        "curl -s -H 'Accept: application/vnd.github.v3+json' %s 2>/dev/null",
-        vim.fn.shellescape(api_url)
-      )
+      cmd =
+        string.format("curl -s -H 'Accept: application/vnd.github.v3+json' %s 2>/dev/null", vim.fn.shellescape(api_url))
     end
 
     vim.system({ "bash", "-c", cmd }, {

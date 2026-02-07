@@ -69,15 +69,11 @@ local function refresh_step_5_get_commit_log(config, callback)
 end
 
 local function refresh_step_4_are_commits_in_branch(config, callback)
-  Git.are_commits_in_branch(
-    Status.state.remote_commits,
-    Status.state.current_branch,
-    function(commits_in_branch)
-      Status.state.commits_in_branch = commits_in_branch
+  Git.are_commits_in_branch(Status.state.remote_commits, Status.state.current_branch, function(commits_in_branch)
+    Status.state.commits_in_branch = commits_in_branch
 
-      refresh_step_5_get_commit_log(config, callback)
-    end
-  )
+    refresh_step_5_get_commit_log(config, callback)
+  end)
 end
 
 local function refresh_step_3_get_remote_commits(config, callback)

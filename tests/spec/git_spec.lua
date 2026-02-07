@@ -34,7 +34,11 @@ describe("git module", function()
 
     -- Create test directory and init git repo
     vim.fn.mkdir(test_config.repo_path, "p")
-    vim.fn.system("cd " .. test_config.repo_path .. " && git init && git config user.email 'test@test.com' && git config user.name 'Test'")
+    vim.fn.system(
+      "cd "
+        .. test_config.repo_path
+        .. " && git init && git config user.email 'test@test.com' && git config user.name 'Test'"
+    )
 
     -- Create initial commit
     local test_file = test_config.repo_path .. "/test.txt"

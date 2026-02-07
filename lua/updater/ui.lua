@@ -647,7 +647,13 @@ function M.generate_current_release_section(state, _config)
 
     -- Add expanded details for current release
     if is_expanded then
-      local detail_lines = ReleaseDetails.generate_detail_lines(state.current_release, "      ", current_hash, current_message, current_author)
+      local detail_lines = ReleaseDetails.generate_detail_lines(
+        state.current_release,
+        "      ",
+        current_hash,
+        current_message,
+        current_author
+      )
       for _, detail_line in ipairs(detail_lines) do
         table.insert(lines, detail_line)
       end
@@ -680,7 +686,8 @@ function M.generate_releases_since_section(state, _config)
 
       -- Add expanded details if this release is expanded
       if is_expanded then
-        local detail_lines = ReleaseDetails.generate_detail_lines(release.tag, "      ", release.hash, release.message, release.author)
+        local detail_lines =
+          ReleaseDetails.generate_detail_lines(release.tag, "      ", release.hash, release.message, release.author)
         for _, detail_line in ipairs(detail_lines) do
           table.insert(lines, detail_line)
         end
@@ -717,7 +724,8 @@ function M.generate_previous_releases_section(state, _config)
 
       -- Add expanded details if this release is expanded
       if is_expanded then
-        local detail_lines = ReleaseDetails.generate_detail_lines(release.tag, "      ", release.hash, release.message, release.author)
+        local detail_lines =
+          ReleaseDetails.generate_detail_lines(release.tag, "      ", release.hash, release.message, release.author)
         for _, detail_line in ipairs(detail_lines) do
           table.insert(lines, detail_line)
         end
@@ -1048,7 +1056,6 @@ local function highlight_commits_since_release(buffer, ns_id, state)
       end
     end
   end
-
 end
 
 -- Helper to highlight a release line with fold indicator
@@ -1199,7 +1206,14 @@ local function highlight_detail_lines(buffer, ns_id, start_line, tag)
               local minus_start = value:find("%-", plus_end)
               if minus_start then
                 local minus_end = value:find(" ", minus_start) or #value + 1
-                add_highlight(buffer, ns_id, "DiffDelete", i, value_start + minus_start - 2, value_start + minus_end - 2)
+                add_highlight(
+                  buffer,
+                  ns_id,
+                  "DiffDelete",
+                  i,
+                  value_start + minus_start - 2,
+                  value_start + minus_end - 2
+                )
               end
             end
           -- Highlight "no changes" in Comment for diff/plugins/dependencies

@@ -11,7 +11,11 @@ describe("operations module", function()
     vim.fn.mkdir(test_dir, "p")
 
     -- Initialize a git repo
-    vim.fn.system("cd " .. vim.fn.shellescape(test_dir) .. " && git init && git config user.email 'test@test.com' && git config user.name 'Test' && touch test.txt && git add . && git commit -m 'Initial commit'")
+    vim.fn.system(
+      "cd "
+        .. vim.fn.shellescape(test_dir)
+        .. " && git init && git config user.email 'test@test.com' && git config user.name 'Test' && touch test.txt && git add . && git commit -m 'Initial commit'"
+    )
 
     Config._reset({
       repo_path = test_dir,

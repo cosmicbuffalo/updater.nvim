@@ -68,11 +68,8 @@ describe("plugins module", function()
   describe("get_plugin_updates", function()
     it("should call callback with empty result when config is nil", function()
       local result
-      local notifications = {}
       local original_notify = vim.notify
-      vim.notify = function(msg, level, opts)
-        table.insert(notifications, { msg = msg, level = level, opts = opts })
-      end
+      vim.notify = function(_msg, _level, _opts) end
 
       Config._reset(nil)
       Plugins.get_plugin_updates(function(r)
@@ -92,11 +89,8 @@ describe("plugins module", function()
 
     it("should call callback with empty result when repo_path is empty", function()
       local result
-      local notifications = {}
       local original_notify = vim.notify
-      vim.notify = function(msg, level, opts)
-        table.insert(notifications, { msg = msg, level = level, opts = opts })
-      end
+      vim.notify = function(_msg, _level, _opts) end
 
       Config._reset({ repo_path = "" })
       Plugins.get_plugin_updates(function(r)

@@ -674,7 +674,7 @@ describe("ui module", function()
           { hash = "abc1234", message = "Fix bug", author = "dev" },
           { hash = "def5678", message = "Add feature", author = "dev2" },
         }
-        local lines, commit_lines = UI.generate_commits_since_release_section(test_state, test_config)
+        local lines, _commit_lines = UI.generate_commits_since_release_section(test_state, test_config)
         local text = table.concat(lines, "\n")
 
         assert.is_truthy(text:match("Commits since"))

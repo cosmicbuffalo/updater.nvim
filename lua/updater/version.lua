@@ -64,7 +64,8 @@ vim.schedule(function()
 ]]
 
   if include_mason then
-    restore_script = restore_script .. [[
+    restore_script = restore_script
+      .. [[
     -- Restore mason tools
     local mason_ok, mason_lock = pcall(require, "mason-lock")
     if mason_ok then
@@ -75,7 +76,8 @@ vim.schedule(function()
 ]]
   end
 
-  restore_script = restore_script .. [[
+  restore_script = restore_script
+    .. [[
     -- Exit after operations complete
     vim.defer_fn(function()
       vim.cmd("qa!")
@@ -262,7 +264,10 @@ function M.show_version_picker()
     end
 
     if #tags == 0 then
-      vim.notify("No version tags found. Create tags with 'git tag v1.0.0' to use version switching.", vim.log.levels.INFO)
+      vim.notify(
+        "No version tags found. Create tags with 'git tag v1.0.0' to use version switching.",
+        vim.log.levels.INFO
+      )
       return
     end
 

@@ -13,7 +13,7 @@ describe("config module", function()
     end)
 
     it("should merge user options with defaults", function()
-      local config, err = Config.setup_config({
+      local config, _err = Config.setup_config({
         main_branch = "develop",
         log_count = 20,
       })
@@ -35,7 +35,7 @@ describe("config module", function()
     end)
 
     it("should have default timeouts configured", function()
-      local config, err = Config.setup_config({})
+      local config, _err = Config.setup_config({})
 
       assert.is_not_nil(config)
       assert.is_not_nil(config.timeouts)
@@ -48,7 +48,7 @@ describe("config module", function()
     end)
 
     it("should have default keymaps configured", function()
-      local config, err = Config.setup_config({})
+      local config, _err = Config.setup_config({})
 
       assert.is_not_nil(config)
       assert.is_not_nil(config.keymap)
@@ -59,7 +59,7 @@ describe("config module", function()
     end)
 
     it("should have default notification messages", function()
-      local config, err = Config.setup_config({})
+      local config, _err = Config.setup_config({})
 
       assert.is_not_nil(config)
       assert.is_not_nil(config.notify)
@@ -103,7 +103,7 @@ describe("config module", function()
     end)
 
     it("should expand repo_path with vim functions", function()
-      local config, err = Config.setup_config({
+      local config, _err = Config.setup_config({
         repo_path = vim.fn.stdpath("config"),
       })
 
@@ -114,7 +114,7 @@ describe("config module", function()
     end)
 
     it("should have git options configured", function()
-      local config, err = Config.setup_config({})
+      local config, _err = Config.setup_config({})
 
       assert.is_not_nil(config)
       assert.is_not_nil(config.git)
@@ -123,7 +123,7 @@ describe("config module", function()
     end)
 
     it("should allow overriding git options", function()
-      local config, err = Config.setup_config({
+      local config, _err = Config.setup_config({
         git = {
           rebase = false,
           autostash = false,

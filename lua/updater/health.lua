@@ -165,7 +165,6 @@ function M.check()
   else
     health.ok("Debug mode disabled")
   end
-
 end
 
 return M
