@@ -1,3 +1,4 @@
+local Config = require("updater.config")
 local Status = require("updater.status")
 local Spinner = require("updater.spinner")
 local M = {}
@@ -140,7 +141,8 @@ local function get_commit_timestamps_batch(plugin_list, callback)
 end
 
 -- Get plugin updates asynchronously with direction detection (behind/ahead)
-function M.get_plugin_updates(config, callback)
+function M.get_plugin_updates(callback)
+  local config = Config.get()
   local empty_result = { all_updates = {}, plugins_behind = {}, plugins_ahead = {} }
 
   if not config then
@@ -244,7 +246,8 @@ function M.get_plugin_updates(config, callback)
   end)
 end
 
-function M.install_plugin_updates(config, render_callback)
+function M.install_plugin_updates(render_callback)
+  local config = Config.get()
   if not config then
     vim.notify("Config is required for plugin updates", vim.log.levels.ERROR, { title = "Plugin Updates" })
     return
@@ -286,7 +289,7 @@ function M.install_plugin_updates(config, render_callback)
       else
         vim.notify("Successfully restored plugins from lockfile!", vim.log.levels.INFO, { title = "Plugin Updates" })
         -- Re-check plugin status asynchronously to update all state fields
-        M.get_plugin_updates(config, function(plugin_result)
+        M.get_plugin_updates(function(plugin_result)
           Status.state.plugin_updates = plugin_result.all_updates
           Status.state.plugins_behind = plugin_result.plugins_behind
           Status.state.plugins_ahead = plugin_result.plugins_ahead

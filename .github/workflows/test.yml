@@ -31,7 +31,7 @@ jobs:
           nvim --version
           PLENARY_DIR=/tmp/plenary.nvim make test
 
-  lint:
+  format:
     runs-on: ubuntu-latest
 
     steps:
@@ -43,3 +43,16 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           version: latest
           args: --check lua/ tests/
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Selene
+        uses: NTBBloodbath/selene-action@v1.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: latest
+          args: --display-style=quiet lua/ tests/

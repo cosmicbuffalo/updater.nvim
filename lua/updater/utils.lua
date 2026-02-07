@@ -1,7 +1,9 @@
+local Config = require("updater.config")
 local M = {}
 
-function M.create_render_callback(config)
+function M.create_render_callback()
   return function(mode)
+    local config = Config.get()
     local Window = require("updater.window")
     if mode == "loading" then
       Window.render_loading_state(config)

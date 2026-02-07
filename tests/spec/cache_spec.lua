@@ -59,7 +59,7 @@ describe("cache module", function()
       local check_done = false
       local is_fresh = nil
 
-      Cache.is_fresh("/nonexistent/path", 60, function(fresh, data)
+      Cache.is_fresh("/nonexistent/path", 60, function(fresh, _data)
         is_fresh = fresh
         check_done = true
       end)
@@ -88,7 +88,7 @@ describe("cache module", function()
       end)
 
       local check_done = false
-      Cache.is_fresh(test_dir, 60, function(fresh, data)
+      Cache.is_fresh(test_dir, 60, function(fresh, _data)
         is_fresh = fresh
         check_done = true
       end)

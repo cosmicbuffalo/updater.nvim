@@ -1,5 +1,6 @@
 local UI = require("updater.ui")
 local Constants = require("updater.constants")
+local Status = require("updater.status")
 
 describe("ui module", function()
   local test_state
@@ -27,6 +28,23 @@ describe("ui module", function()
       recently_updated_plugins = false,
       loading_spinner_frame = 1,
       current_commit = "abc1234",
+      -- Versioned releases mode state
+      current_release = nil,
+      latest_remote_release = nil,
+      has_new_release = false,
+      commits_since_release = 0,
+      commits_since_release_list = {},
+      releases_since_current = {},
+      releases_before_current = {},
+      is_detached_head = false,
+      current_tag = nil,
+      is_switching_version = false,
+      switching_to_version = nil,
+      recently_switched_to = nil,
+      switched_from_version = nil,
+      window_width = 80,
+      expanded_releases = {},
+      github_releases = {},
     }
 
     test_config = {
@@ -38,7 +56,12 @@ describe("ui module", function()
         refresh = "r",
         close = "q",
       },
+      versioned_releases_only = false,
     }
+
+    -- Reset Status module state for release expansion checks
+    Status.state.expanded_releases = {}
+    Status.state.github_releases = {}
   end)
 
   describe("get_loading_spinner", function()
@@ -500,13 +523,175 @@ describe("ui module", function()
       assert.is_truthy(text:match("Seeing what's new on main"))
     end)
 
-    it("should not show U keybind on non-main branch during loading", function()
-      test_state.current_branch = "feature-branch"
+    it("should only show close keybind during loading", function()
       local lines = UI.generate_loading_state(test_state, test_config)
 
       local text = table.concat(lines, "\n")
-      assert.is_falsy(text:match("Update dotfiles %+ install plugin updates"))
-      assert.is_truthy(text:match("Pull latest main into branch"))
+      assert.is_truthy(text:match("Close window"))
+      -- Should not show other keybinds during loading
+      assert.is_falsy(text:match("Update dotfiles"))
+      assert.is_falsy(text:match("Refresh status"))
+    end)
+  end)
+
+  describe("versioned_releases_only mode", function()
+    before_each(function()
+      test_config.versioned_releases_only = true
+      test_state.current_release = "v1.0.0"
+      test_state.latest_remote_release = "v1.1.0"
+      test_state.has_new_release = true
+      test_state.releases_since_current = {
+        { tag = "v1.1.0", hash = "abc1234" },
+      }
+      test_state.releases_before_current = {
+        { tag = "v0.9.0", hash = "def5678" },
+      }
+      test_state.release_commit = { hash = "ghi9012", message = "Release v1.0.0", author = "dev" }
+    end)
+
+    describe("generate_release_header", function()
+      it("should return header lines", function()
+        local header, status_messages, status_lines_start = UI.generate_release_header(test_state, test_config)
+
+        assert.is_table(header)
+        assert.is_true(#header > 0)
+        assert.is_table(status_messages)
+        assert.is_number(status_lines_start)
+      end)
+
+      it("should include branch info", function()
+        local header = UI.generate_release_header(test_state, test_config)
+        local text = table.concat(header, "\n")
+
+        assert.is_truthy(text:match("Branch"))
+      end)
+
+      it("should show detached HEAD when on tag", function()
+        test_state.is_detached_head = true
+        test_state.current_tag = "v1.0.0"
+        local header = UI.generate_release_header(test_state, test_config)
+        local text = table.concat(header, "\n")
+
+        assert.is_truthy(text:match("detached HEAD"))
+        assert.is_truthy(text:match("v1%.0%.0"))
+      end)
+    end)
+
+    describe("generate_release_keybindings", function()
+      it("should return keybinding lines", function()
+        local keybindings, keybind_data = UI.generate_release_keybindings(test_state, test_config)
+
+        assert.is_table(keybindings)
+        assert.is_true(#keybindings > 0)
+        assert.is_table(keybind_data)
+      end)
+
+      it("should include release-specific keybinds", function()
+        local keybindings = UI.generate_release_keybindings(test_state, test_config)
+        local text = table.concat(keybindings, "\n")
+
+        assert.is_truthy(text:match("Toggle release details"))
+        assert.is_truthy(text:match("Switch to release"))
+        assert.is_truthy(text:match("Copy"))
+      end)
+
+      it("should include close and refresh keybinds", function()
+        local keybindings = UI.generate_release_keybindings(test_state, test_config)
+        local text = table.concat(keybindings, "\n")
+
+        assert.is_truthy(text:match("Close"))
+        assert.is_truthy(text:match("Check for new releases"))
+      end)
+    end)
+
+    describe("generate_current_release_section", function()
+      it("should return lines and release_lines mapping", function()
+        local lines, release_lines = UI.generate_current_release_section(test_state, test_config)
+
+        assert.is_table(lines)
+        assert.is_table(release_lines)
+      end)
+
+      it("should include current release section when release exists", function()
+        local lines = UI.generate_current_release_section(test_state, test_config)
+        local text = table.concat(lines, "\n")
+
+        assert.is_truthy(text:match("Current release"))
+        assert.is_truthy(text:match("v1%.0%.0"))
+      end)
+
+      it("should return empty when no current release", function()
+        test_state.current_release = nil
+        local lines = UI.generate_current_release_section(test_state, test_config)
+
+        assert.equals(0, #lines)
+      end)
+    end)
+
+    describe("generate_releases_since_section", function()
+      it("should include releases since current", function()
+        local lines = UI.generate_releases_since_section(test_state, test_config)
+        local text = table.concat(lines, "\n")
+
+        assert.is_truthy(text:match("v1%.1%.0"))
+      end)
+
+      it("should show section title with current release", function()
+        local lines = UI.generate_releases_since_section(test_state, test_config)
+        local text = table.concat(lines, "\n")
+
+        assert.is_truthy(text:match("Releases since v1%.0%.0"))
+      end)
+    end)
+
+    describe("generate_previous_releases_section", function()
+      it("should include previous releases", function()
+        local lines = UI.generate_previous_releases_section(test_state, test_config)
+        local text = table.concat(lines, "\n")
+
+        assert.is_truthy(text:match("v0%.9%.0"))
+      end)
+
+      it("should show section title", function()
+        local lines = UI.generate_previous_releases_section(test_state, test_config)
+        local text = table.concat(lines, "\n")
+
+        assert.is_truthy(text:match("Previous releases"))
+      end)
+    end)
+
+    describe("generate_commits_since_release_section", function()
+      it("should return empty when no commits since release", function()
+        test_state.commits_since_release_list = {}
+        local lines = UI.generate_commits_since_release_section(test_state, test_config)
+
+        assert.equals(0, #lines)
+      end)
+
+      it("should show commits when on a non-tag commit", function()
+        test_state.current_tag = nil
+        test_state.commits_since_release_list = {
+          { hash = "abc1234", message = "Fix bug", author = "dev" },
+          { hash = "def5678", message = "Add feature", author = "dev2" },
+        }
+        local lines, _commit_lines = UI.generate_commits_since_release_section(test_state, test_config)
+        local text = table.concat(lines, "\n")
+
+        assert.is_truthy(text:match("Commits since"))
+        assert.is_truthy(text:match("abc1234"))
+        assert.is_truthy(text:match("Fix bug"))
+      end)
+
+      it("should include author in commit lines", function()
+        test_state.current_tag = nil
+        test_state.commits_since_release_list = {
+          { hash = "abc1234", message = "Fix bug", author = "testdev" },
+        }
+        local lines = UI.generate_commits_since_release_section(test_state, test_config)
+        local text = table.concat(lines, "\n")
+
+        assert.is_truthy(text:match("by testdev"))
+      end)
     end)
   end)
 end)

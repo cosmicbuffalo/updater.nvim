@@ -24,7 +24,7 @@ package.loaded["lazy.core.config"] = {
 }
 
 package.loaded["lazy.manage.git"] = {
-  info = function(dir)
+  info = function(_dir)
     return nil
   end,
 }

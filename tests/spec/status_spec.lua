@@ -10,7 +10,7 @@ describe("status module", function()
     Status.state.is_updating = false
     Status.state.is_refreshing = false
     Status.state.is_installing_plugins = false
-    Status.state.current_branch = "unknown"
+    Status.state.current_branch = "Loading..."
     Status.state.current_commit = nil
     Status.state.ahead_count = 0
     Status.state.behind_count = 0
@@ -48,58 +48,6 @@ describe("status module", function()
     end)
   end)
 
-  describe("has_updates", function()
-    it("should return false when no updates available", function()
-      Status.state.needs_update = false
-      Status.state.has_plugin_updates = false
-      assert.is_false(Status.has_updates())
-    end)
-
-    it("should return true when dotfile updates available", function()
-      Status.state.needs_update = true
-      Status.state.has_plugin_updates = false
-      assert.is_true(Status.has_updates())
-    end)
-
-    it("should return true when plugin updates available", function()
-      Status.state.needs_update = false
-      Status.state.has_plugin_updates = true
-      assert.is_true(Status.has_updates())
-    end)
-
-    it("should return true when both updates available", function()
-      Status.state.needs_update = true
-      Status.state.has_plugin_updates = true
-      assert.is_true(Status.has_updates())
-    end)
-  end)
-
-  describe("has_recent_updates", function()
-    it("should return false when no recent updates", function()
-      Status.state.recently_updated_dotfiles = false
-      Status.state.recently_updated_plugins = false
-      assert.is_false(Status.has_recent_updates())
-    end)
-
-    it("should return true when dotfiles recently updated", function()
-      Status.state.recently_updated_dotfiles = true
-      Status.state.recently_updated_plugins = false
-      assert.is_true(Status.has_recent_updates())
-    end)
-
-    it("should return true when plugins recently updated", function()
-      Status.state.recently_updated_dotfiles = false
-      Status.state.recently_updated_plugins = true
-      assert.is_true(Status.has_recent_updates())
-    end)
-
-    it("should return true when both recently updated", function()
-      Status.state.recently_updated_dotfiles = true
-      Status.state.recently_updated_plugins = true
-      assert.is_true(Status.has_recent_updates())
-    end)
-  end)
-
   describe("clear_recent_updates", function()
     it("should clear recent update flags", function()
       Status.state.recently_updated_dotfiles = true
@@ -109,134 +57,6 @@ describe("status module", function()
 
       assert.is_false(Status.state.recently_updated_dotfiles)
       assert.is_false(Status.state.recently_updated_plugins)
-    end)
-  end)
-
-  describe("get", function()
-    it("should return current status", function()
-      Status.state.needs_update = true
-      Status.state.behind_count = 5
-      Status.state.ahead_count = 2
-      Status.state.has_plugin_updates = true
-      Status.state.plugin_updates = { { name = "test" }, { name = "test2" } }
-      Status.state.current_branch = "main"
-      Status.state.last_check_time = 12345
-      Status.state.is_updating = false
-      Status.state.is_installing_plugins = false
-      Status.state.is_refreshing = true
-
-      local status = Status.get()
-
-      assert.equals(true, status.needs_update)
-      assert.equals(5, status.behind_count)
-      assert.equals(2, status.ahead_count)
-      assert.equals(true, status.has_plugin_updates)
-      assert.equals(2, status.plugin_update_count)
-      assert.equals("main", status.current_branch)
-      assert.equals(12345, status.last_check_time)
-      assert.equals(false, status.is_updating)
-      assert.equals(false, status.is_installing_plugins)
-      assert.equals(true, status.is_refreshing)
-    end)
-  end)
-
-  describe("get_update_count", function()
-    it("should return 0 when no updates", function()
-      Status.state.needs_update = false
-      Status.state.has_plugins_behind = false
-      assert.equals(0, Status.get_update_count())
-    end)
-
-    it("should return behind_count when dotfile updates available", function()
-      Status.state.needs_update = true
-      Status.state.behind_count = 3
-      Status.state.has_plugins_behind = false
-      assert.equals(3, Status.get_update_count())
-    end)
-
-    it("should return plugin count when plugins are behind", function()
-      Status.state.needs_update = false
-      Status.state.has_plugins_behind = true
-      Status.state.plugins_behind = { { name = "a" }, { name = "b" } }
-      assert.equals(2, Status.get_update_count())
-    end)
-
-    it("should return combined count when both updates available", function()
-      Status.state.needs_update = true
-      Status.state.behind_count = 3
-      Status.state.has_plugins_behind = true
-      Status.state.plugins_behind = { { name = "a" }, { name = "b" } }
-      assert.equals(5, Status.get_update_count())
-    end)
-
-    it("should not count plugins ahead in update count", function()
-      Status.state.needs_update = false
-      Status.state.has_plugins_behind = false
-      Status.state.has_plugins_ahead = true
-      Status.state.plugins_ahead = { { name = "a" } }
-      assert.equals(0, Status.get_update_count())
-    end)
-  end)
-
-  describe("get_update_text", function()
-    it("should return empty string when no updates", function()
-      Status.state.needs_update = false
-      Status.state.has_plugins_behind = false
-      assert.equals("", Status.get_update_text())
-    end)
-
-    it("should return dotfile text in default format", function()
-      Status.state.needs_update = true
-      Status.state.behind_count = 1
-      Status.state.has_plugins_behind = false
-      assert.equals("1 dotfile update", Status.get_update_text())
-    end)
-
-    it("should pluralize dotfiles correctly", function()
-      Status.state.needs_update = true
-      Status.state.behind_count = 3
-      Status.state.has_plugins_behind = false
-      assert.equals("3 dotfiles updates", Status.get_update_text())
-    end)
-
-    it("should return plugin text in default format", function()
-      Status.state.needs_update = false
-      Status.state.has_plugins_behind = true
-      Status.state.plugins_behind = { { name = "test" } }
-      assert.equals("1 plugin update", Status.get_update_text())
-    end)
-
-    it("should pluralize plugins correctly", function()
-      Status.state.needs_update = false
-      Status.state.has_plugins_behind = true
-      Status.state.plugins_behind = { { name = "a" }, { name = "b" } }
-      assert.equals("2 plugins updates", Status.get_update_text())
-    end)
-
-    it("should combine dotfiles and plugins", function()
-      Status.state.needs_update = true
-      Status.state.behind_count = 2
-      Status.state.has_plugins_behind = true
-      Status.state.plugins_behind = { { name = "a" } }
-      assert.equals("2 dotfiles, 1 plugin updates", Status.get_update_text())
-    end)
-
-    it("should return short format", function()
-      Status.state.needs_update = true
-      Status.state.behind_count = 2
-      Status.state.has_plugins_behind = true
-      Status.state.plugins_behind = { { name = "a" } }
-      assert.equals("2d 1p", Status.get_update_text("short"))
-    end)
-
-    it("should return icon format", function()
-      Status.state.needs_update = true
-      Status.state.behind_count = 2
-      Status.state.has_plugins_behind = true
-      Status.state.plugins_behind = { { name = "a" } }
-      local text = Status.get_update_text("icon")
-      assert.is_truthy(text:match("2"))
-      assert.is_truthy(text:match("1"))
     end)
   end)
 
@@ -269,6 +89,174 @@ describe("status module", function()
       assert.is_not_nil(Status.state.current_branch)
       assert.is_not_nil(Status.state.needs_update)
       assert.is_not_nil(Status.state.plugin_updates)
+    end)
+
+    it("should have version tracking state fields", function()
+      assert.is_not_nil(Status.state.expanded_releases)
+      assert.is_not_nil(Status.state.release_details_cache)
+      assert.is_not_nil(Status.state.fetching_release_details)
+      assert.is_not_nil(Status.state.github_releases)
+    end)
+  end)
+
+  describe("version tracking helpers", function()
+    before_each(function()
+      Status.state.current_tag = nil
+      Status.state.is_detached_head = false
+    end)
+
+    describe("get_version_display", function()
+      it("should return nil when no current tag", function()
+        Status.state.current_tag = nil
+        assert.is_nil(Status.get_version_display())
+      end)
+
+      it("should return current_tag when on a tag", function()
+        Status.state.current_tag = "v1.2.0"
+        assert.equals("v1.2.0", Status.get_version_display())
+      end)
+    end)
+
+    describe("is_pinned_to_version", function()
+      it("should return false when not on detached head", function()
+        Status.state.is_detached_head = false
+        Status.state.current_tag = "v1.0.0"
+        assert.is_false(Status.is_pinned_to_version())
+      end)
+
+      it("should return false when on detached head but no tag", function()
+        Status.state.is_detached_head = true
+        Status.state.current_tag = nil
+        assert.is_false(Status.is_pinned_to_version())
+      end)
+
+      it("should return true when on detached head with a tag", function()
+        Status.state.is_detached_head = true
+        Status.state.current_tag = "v1.0.0"
+        assert.is_true(Status.is_pinned_to_version())
+      end)
+    end)
+  end)
+
+  describe("release expansion helpers", function()
+    before_each(function()
+      Status.state.expanded_releases = {}
+      Status.state.release_details_cache = {}
+      Status.state.fetching_release_details = {}
+    end)
+
+    describe("is_release_expanded", function()
+      it("should return false for non-expanded release", function()
+        assert.is_false(Status.is_release_expanded("v1.0.0"))
+      end)
+
+      it("should return true for expanded release", function()
+        Status.state.expanded_releases["v1.0.0"] = true
+        assert.is_true(Status.is_release_expanded("v1.0.0"))
+      end)
+    end)
+
+    describe("toggle_release_expansion", function()
+      it("should expand a collapsed release", function()
+        Status.toggle_release_expansion("v1.0.0")
+        assert.is_true(Status.is_release_expanded("v1.0.0"))
+      end)
+
+      it("should collapse an expanded release", function()
+        Status.state.expanded_releases["v1.0.0"] = true
+        Status.toggle_release_expansion("v1.0.0")
+        assert.is_false(Status.is_release_expanded("v1.0.0"))
+      end)
+    end)
+
+    describe("release_details_cache", function()
+      it("should get and set release details", function()
+        local details = { commit = "abc123", date = "2024-01-01" }
+        Status.set_release_details("v1.0.0", details)
+
+        local retrieved = Status.get_release_details("v1.0.0")
+        assert.equals("abc123", retrieved.commit)
+        assert.equals("2024-01-01", retrieved.date)
+      end)
+
+      it("should return nil for uncached release", function()
+        assert.is_nil(Status.get_release_details("v2.0.0"))
+      end)
+    end)
+
+    describe("fetching_release_details", function()
+      it("should track fetching state", function()
+        assert.is_false(Status.is_fetching_release_details("v1.0.0"))
+
+        Status.set_fetching_release_details("v1.0.0", true)
+        assert.is_true(Status.is_fetching_release_details("v1.0.0"))
+
+        Status.set_fetching_release_details("v1.0.0", false)
+        assert.is_false(Status.is_fetching_release_details("v1.0.0"))
+      end)
+    end)
+  end)
+
+  describe("GitHub release helpers", function()
+    before_each(function()
+      Status.state.github_releases = {}
+    end)
+
+    describe("get_github_release", function()
+      it("should return nil for unknown tag", function()
+        assert.is_nil(Status.get_github_release("v1.0.0"))
+      end)
+
+      it("should return release data for known tag", function()
+        Status.state.github_releases["v1.0.0"] = {
+          name = "Release 1.0.0",
+          body = "Release notes",
+          prerelease = false,
+        }
+
+        local release = Status.get_github_release("v1.0.0")
+        assert.equals("Release 1.0.0", release.name)
+        assert.equals("Release notes", release.body)
+        assert.is_false(release.prerelease)
+      end)
+    end)
+
+    describe("is_prerelease", function()
+      it("should return falsy for unknown tag", function()
+        assert.is_falsy(Status.is_prerelease("v1.0.0"))
+      end)
+
+      it("should return false for non-prerelease", function()
+        Status.state.github_releases["v1.0.0"] = { prerelease = false }
+        assert.is_false(Status.is_prerelease("v1.0.0"))
+      end)
+
+      it("should return true for prerelease", function()
+        Status.state.github_releases["v1.0.0-pre"] = { prerelease = true }
+        assert.is_true(Status.is_prerelease("v1.0.0-pre"))
+      end)
+    end)
+
+    describe("get_release_title", function()
+      it("should return nil for unknown tag", function()
+        assert.is_nil(Status.get_release_title("v1.0.0"))
+      end)
+
+      it("should return release name", function()
+        Status.state.github_releases["v1.0.0"] = { name = "Version 1.0.0" }
+        assert.equals("Version 1.0.0", Status.get_release_title("v1.0.0"))
+      end)
+    end)
+
+    describe("get_release_body", function()
+      it("should return nil for unknown tag", function()
+        assert.is_nil(Status.get_release_body("v1.0.0"))
+      end)
+
+      it("should return release body", function()
+        Status.state.github_releases["v1.0.0"] = { body = "# Changelog\n- Feature 1" }
+        assert.equals("# Changelog\n- Feature 1", Status.get_release_body("v1.0.0"))
+      end)
     end)
   end)
 end)

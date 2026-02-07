@@ -1,18 +1,18 @@
+local Config = require("updater.config")
 local Status = require("updater.status")
 local Utils = require("updater.utils")
 local Errors = require("updater.errors")
 local M = {}
 
--- Private reference to config (set when debug module is loaded)
-local config = nil
-
-function M.init(updater_config)
-  config = updater_config
+function M.init()
+  -- No-op, kept for backwards compatibility
+  -- Config is now retrieved via Config.get()
 end
 
 function M.toggle_debug_mode()
+  local config = Config.get()
   if not config then
-    Errors.notify_error("Debug module not initialized", nil, "Debug module")
+    Errors.notify_error("Debug module not initialized", "Debug module")
     return
   end
 
@@ -39,17 +39,18 @@ function M.toggle_debug_mode()
 
   -- Trigger immediate check for lualine updates
   local Operations = require("updater.operations")
-  Operations.check_updates_silent(config)
+  Operations.check_updates_silent()
 
   -- Refresh if window is open
   if Status.state.is_open then
-    Operations.refresh(config, Utils.create_render_callback(config))
+    Operations.refresh(Utils.create_render_callback())
   end
 end
 
 function M.simulate_updates(dotfile_updates, plugin_updates)
+  local config = Config.get()
   if not config then
-    Errors.notify_error("Debug module not initialized", nil, "Debug module")
+    Errors.notify_error("Debug module not initialized", "Debug module")
     return
   end
 
@@ -73,17 +74,18 @@ function M.simulate_updates(dotfile_updates, plugin_updates)
 
   -- Trigger immediate check for lualine updates
   local Operations = require("updater.operations")
-  Operations.check_updates_silent(config)
+  Operations.check_updates_silent()
 
   -- Refresh if window is open
   if Status.state.is_open then
-    Operations.refresh(config, Utils.create_render_callback(config))
+    Operations.refresh(Utils.create_render_callback())
   end
 end
 
 function M.disable_debug_mode()
+  local config = Config.get()
   if not config then
-    Errors.notify_error("Debug module not initialized", nil, "Debug module")
+    Errors.notify_error("Debug module not initialized", "Debug module")
     return
   end
 
@@ -92,11 +94,11 @@ function M.disable_debug_mode()
 
   -- Trigger immediate check for lualine updates
   local Operations = require("updater.operations")
-  Operations.check_updates_silent(config)
+  Operations.check_updates_silent()
 
   -- Refresh if window is open
   if Status.state.is_open then
-    Operations.refresh(config, Utils.create_render_callback(config))
+    Operations.refresh(Utils.create_render_callback())
   end
 end
 
@@ -217,10 +219,11 @@ function M.register_commands()
 end
 
 function M.is_loaded()
-  return config ~= nil
+  return Config.get() ~= nil
 end
 
 function M.get_status()
+  local config = Config.get()
   if not config then
     return "not loaded"
   end

@@ -1,15 +1,12 @@
 local M = {}
 
-local function validate_repo_path(cfg)
-  local errors = {}
-  if not cfg.repo_path or cfg.repo_path == "" then
-    table.insert(errors, "repo_path cannot be empty")
-  elseif type(cfg.repo_path) ~= "string" then
-    table.insert(errors, "repo_path must be a string")
-  elseif not vim.fn.isdirectory(cfg.repo_path) then
-    table.insert(errors, "repo_path directory does not exist: " .. cfg.repo_path)
-  end
-  return errors
+-- Module-level config storage
+local current_config = nil
+
+-- Get the current config
+-- @return table|nil The current config or nil if not set up
+function M.get()
+  return current_config
 end
 
 local function validate_timeout_utility(cfg)
@@ -94,11 +91,30 @@ local function validate_excluded_filetypes(cfg)
   return errors
 end
 
+local function validate_versioned_releases_only(cfg)
+  local errors = {}
+  if cfg.versioned_releases_only ~= nil and type(cfg.versioned_releases_only) ~= "boolean" then
+    table.insert(errors, "versioned_releases_only must be a boolean")
+  end
+  return errors
+end
+
+local function validate_version_tag_pattern(cfg)
+  local errors = {}
+  if cfg.version_tag_pattern ~= nil then
+    if type(cfg.version_tag_pattern) ~= "string" then
+      table.insert(errors, "version_tag_pattern must be a string")
+    elseif cfg.version_tag_pattern == "" then
+      table.insert(errors, "version_tag_pattern cannot be empty")
+    end
+  end
+  return errors
+end
+
 local function validate_config(cfg)
   local errors = {}
 
   local validators = {
-    validate_repo_path,
     validate_timeout_utility,
     validate_periodic_check,
     validate_timeouts,
@@ -106,6 +122,8 @@ local function validate_config(cfg)
     validate_main_branch,
     validate_git_options,
     validate_excluded_filetypes,
+    validate_versioned_releases_only,
+    validate_version_tag_pattern,
   }
 
   for _, validator in ipairs(validators) do
@@ -194,6 +212,8 @@ function M.setup_config(opts)
       frequency_minutes = 20,
     },
     excluded_filetypes = { "gitcommit", "gitrebase" },
+    versioned_releases_only = false, -- When true, only show updates when new release tags are available
+    version_tag_pattern = "v*", -- Glob pattern for version tags (e.g., "v*", "release-*")
   }
 
   local merged_config = vim.tbl_deep_extend("force", default_config, opts or {})
@@ -211,7 +231,16 @@ function M.setup_config(opts)
 
   merged_config.repo_path = sanitized_path
 
+  -- Store the config internally
+  current_config = merged_config
+
   return merged_config
+end
+
+-- Reset config (for testing only)
+-- @param config table|nil The config to set, or nil to clear
+function M._reset(config)
+  current_config = config
 end
 
 return M

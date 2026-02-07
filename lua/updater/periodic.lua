@@ -1,3 +1,4 @@
+local Config = require("updater.config")
 local Progress = require("updater.progress")
 local Operations = require("updater.operations")
 local Status = require("updater.status")
@@ -6,7 +7,17 @@ local Constants = require("updater.constants")
 local Cache = require("updater.cache")
 local M = {}
 
-local function periodic_check(config)
+-- Skip periodic checks when pinned to a version
+local function should_skip_periodic_check()
+  return Status.is_pinned_to_version()
+end
+
+local function periodic_check()
+  local config = Config.get()
+  -- Skip checks when pinned to a version
+  if should_skip_periodic_check() then
+    return
+  end
   Cache.is_fresh(config.repo_path, config.periodic_check.frequency_minutes, function(is_fresh, _)
     if is_fresh then
       return
@@ -14,7 +25,7 @@ local function periodic_check(config)
 
     local progress_handler = Progress.handle_refresh_progress("Checking for updates...", "Fetching remote changes...")
 
-    Operations.check_updates_silent(config, function(has_updates)
+    Operations.check_updates_silent(function(has_updates)
       if progress_handler then
         progress_handler.finish(has_updates)
       end
@@ -41,7 +52,9 @@ function M.stop_periodic_check()
   Spinner.stop_loading_spinner()
 end
 
-function M.setup_periodic_check(config)
+function M.setup_periodic_check()
+  local config = Config.get()
+
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = vim.api.nvim_create_augroup("updater_cleanup", { clear = true }),
     callback = M.stop_periodic_check,
@@ -66,12 +79,14 @@ function M.setup_periodic_check(config)
           return
         end
       end
-      periodic_check(config)
+      periodic_check()
     end)
   )
 end
 
-function M.setup_startup_check(config, check_updates_callback)
+function M.setup_startup_check(check_updates_callback)
+  local config = Config.get()
+
   if not config.check_updates_on_startup.enabled then
     return
   end

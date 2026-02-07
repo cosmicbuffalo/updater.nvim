@@ -5,6 +5,7 @@ local state = {
   is_open = false,
   buffer = nil,
   window = nil,
+  window_width = 80, -- Default, updated when window opens
   is_initial_load = false,
 
   -- Operation states
@@ -13,7 +14,7 @@ local state = {
   is_installing_plugins = false,
 
   -- Git status
-  current_branch = "unknown",
+  current_branch = "Loading...",
   current_commit = nil,
   ahead_count = 0,
   behind_count = 0,
@@ -49,6 +50,36 @@ local state = {
   debug_enabled = false,
   debug_simulate_dotfiles = 0,
   debug_simulate_plugins = 0,
+
+  -- Version tracking state
+  current_tag = nil, -- tag if HEAD is exactly on one
+  is_switching_version = false,
+  switching_to_version = nil, -- target version during switch
+  recently_switched_to = nil, -- version we just switched to (for success message)
+  switched_from_version = nil, -- version we switched from (for upgrade/downgrade detection)
+
+  -- Release tracking state (for versioned_releases_only mode)
+  current_release = nil, -- latest release tag on current branch
+  latest_remote_release = nil, -- latest release tag on remote main
+  has_new_release = false, -- true if remote has newer release
+  commits_since_release = 0, -- commits on branch after current_release
+  commits_since_release_list = {}, -- actual commit objects since release
+  release_commit = nil, -- commit info for the current release tag
+  releases_since_current = {}, -- release tags newer than current release
+  releases_before_current = {}, -- release tags older than current release
+  is_detached_head = false, -- true if on detached HEAD
+
+  -- Release details expansion state
+  expanded_releases = {}, -- map of tag -> true for expanded releases
+  release_details_cache = {}, -- map of tag -> details object
+  fetching_release_details = {}, -- map of tag -> true while fetching
+
+  -- GitHub release data (fetched from API)
+  github_releases = {}, -- map of tag -> github release data (name, body, prerelease, etc.)
+  github_releases_fetched = false, -- true once we've attempted to fetch
+
+  -- Repository info
+  remote_url = nil, -- git remote URL (for constructing GitHub links)
 }
 
 function M.stop_periodic_timer()
@@ -63,6 +94,7 @@ function M.has_cached_data()
   return state.last_check_time ~= nil
 end
 
+-- DEPRECATED - planning to remove in future release and replace with new semantic versioning-based lualine integration
 function M.has_updates()
   return state.needs_update or state.has_plugin_updates or state.has_plugins_behind or state.has_plugins_ahead
 end
@@ -144,6 +176,74 @@ function M.get_update_text(format)
   else
     return table.concat(parts, ", ") .. " update" .. (M.get_update_count() == 1 and "" or "s")
   end
+end
+
+-- Version tracking helpers
+function M.get_version_display()
+  -- Return current tag if on one, otherwise nil
+  return state.current_tag
+end
+
+-- Check if currently pinned to a specific version (on a tag in detached HEAD)
+function M.is_pinned_to_version()
+  return state.is_detached_head and state.current_tag ~= nil
+end
+
+-- Release expansion helpers
+function M.is_release_expanded(tag)
+  return state.expanded_releases[tag] == true
+end
+
+function M.toggle_release_expansion(tag)
+  if state.expanded_releases[tag] then
+    state.expanded_releases[tag] = nil
+  else
+    state.expanded_releases[tag] = true
+  end
+end
+
+function M.get_release_details(tag)
+  return state.release_details_cache[tag]
+end
+
+function M.set_release_details(tag, details)
+  state.release_details_cache[tag] = details
+end
+
+function M.is_fetching_release_details(tag)
+  return state.fetching_release_details[tag] == true
+end
+
+function M.set_fetching_release_details(tag, fetching)
+  if fetching then
+    state.fetching_release_details[tag] = true
+  else
+    state.fetching_release_details[tag] = nil
+  end
+end
+
+-- GitHub release helpers
+function M.get_github_release(tag)
+  return state.github_releases[tag]
+end
+
+function M.has_github_release(tag)
+  return state.github_releases[tag] ~= nil
+end
+
+function M.is_prerelease(tag)
+  local release = state.github_releases[tag]
+  return release and release.prerelease == true
+end
+
+function M.get_release_title(tag)
+  local release = state.github_releases[tag]
+  return release and release.name or nil
+end
+
+function M.get_release_body(tag)
+  local release = state.github_releases[tag]
+  return release and release.body or nil
 end
 
 M.state = state

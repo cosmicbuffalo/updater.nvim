@@ -8,27 +8,27 @@ local Spinner = require("updater.spinner")
 local Git = require("updater.git")
 local Utils = require("updater.utils")
 local Cache = require("updater.cache")
+local Version = require("updater.version")
+local ReleaseDetails = require("updater.release_details")
 local M = {}
 
 -- Expose status module for external integrations
 M.status = Status
 
-local config = {}
-
-function M.get_config()
-  return config
-end
 local state = Status.state
 
-local function render_callback(mode)
+local function render_callback(mode, opts)
+  local config = Config.get()
   if mode == "loading" then
     Window.render_loading_state(config)
   else
-    Window.render(config)
+    Window.render(config, opts)
   end
 end
 
 function M.open()
+  local config = Config.get()
+
   if state.is_open then
     if vim.api.nvim_win_is_valid(state.window) then
       vim.api.nvim_set_current_win(state.window)
@@ -43,20 +43,136 @@ function M.open()
   Window.setup_keymaps(config, {
     close = M.close,
     update = function()
-      Operations.update_repo(config, render_callback)
+      Operations.update_repo(render_callback)
     end,
     refresh = function()
-      Operations.refresh(config, render_callback)
+      Operations.refresh(render_callback)
     end,
     install_plugins = function()
-      Plugins.install_plugin_updates(config, render_callback)
+      Plugins.install_plugin_updates(render_callback)
     end,
     update_all = function()
-      Operations.update_dotfiles_and_plugins(config, render_callback)
+      if config.versioned_releases_only then
+        -- In versioned releases mode, switch to the latest release tag
+        -- Guard: don't switch if already on latest or ahead of latest
+        if not state.has_new_release then
+          if state.current_tag and state.current_release == state.current_tag then
+            vim.notify("Already on latest release", vim.log.levels.INFO, { title = "Updater" })
+          else
+            vim.notify("No newer release available", vim.log.levels.INFO, { title = "Updater" })
+          end
+          return
+        end
+        -- Same behavior as hitting 's' on the latest release
+        Version.switch_to_latest(function(success, msg)
+          if success then
+            -- Just render to show the success message, don't refresh
+            render_callback()
+          else
+            vim.notify(msg, vim.log.levels.ERROR, { title = "Updater" })
+          end
+        end, render_callback)
+      else
+        Operations.update_dotfiles_and_plugins(render_callback)
+      end
+    end,
+    toggle_release = function()
+      -- Get current cursor position (1-indexed in vim)
+      local cursor_pos = vim.api.nvim_win_get_cursor(state.window)
+      local cursor_line = cursor_pos[1] - 1 -- Convert to 0-indexed for line mapping
+      local cursor_col = cursor_pos[2]
+      local tag = ReleaseDetails.get_release_at_line(cursor_line)
+      if tag then
+        -- Create a callback that restores cursor position after render
+        local restore_cursor_callback = function()
+          render_callback()
+          -- Restore cursor position after render
+          vim.schedule(function()
+            if state.window and vim.api.nvim_win_is_valid(state.window) then
+              -- Clamp line to buffer bounds
+              local line_count = vim.api.nvim_buf_line_count(state.buffer)
+              local target_line = math.min(cursor_pos[1], line_count)
+              vim.api.nvim_win_set_cursor(state.window, { target_line, cursor_col })
+            end
+          end)
+        end
+        ReleaseDetails.toggle_release(tag, restore_cursor_callback)
+      end
+    end,
+    switch_to_release = function()
+      -- Get current cursor position (1-indexed in vim)
+      local cursor_pos = vim.api.nvim_win_get_cursor(state.window)
+      local cursor_line = cursor_pos[1] - 1 -- Convert to 0-indexed for line mapping
+      local tag = ReleaseDetails.get_release_at_line(cursor_line)
+      if tag then
+        -- Check if already pinned to this tag (only when actually on this exact tag)
+        if state.current_tag == tag then
+          vim.notify("Already on " .. tag, vim.log.levels.INFO, { title = "Updater" })
+          return
+        end
+        -- Create a callback that positions cursor on the switched-to tag
+        local switch_render_callback = function(mode)
+          render_callback(mode, { cursor_on_tag = tag })
+        end
+        Version.switch_to_version(tag, function(success, msg)
+          if success then
+            -- Render with cursor on the tag we switched to
+            switch_render_callback()
+          else
+            vim.notify(msg, vim.log.levels.ERROR, { title = "Updater" })
+          end
+        end, switch_render_callback)
+      end
+    end,
+    copy_release_url = function()
+      -- Get current cursor position (1-indexed in vim)
+      local cursor_pos = vim.api.nvim_win_get_cursor(state.window)
+      local cursor_line = cursor_pos[1] - 1 -- Convert to 0-indexed for line mapping
+
+      -- Check if cursor is on a release line
+      local tag = ReleaseDetails.get_release_at_line(cursor_line)
+      if tag then
+        -- Get the release details to find the URL
+        local details = Status.get_release_details(tag)
+        if details and details.url then
+          vim.fn.setreg("+", details.url)
+          vim.fn.setreg("*", details.url)
+          vim.notify("Copied: " .. details.url, vim.log.levels.INFO, { title = "Updater" })
+        else
+          -- Construct URL from state.remote_url
+          local remote_url = state.remote_url
+          if remote_url then
+            local url = remote_url .. "/releases/tag/" .. tag
+            vim.fn.setreg("+", url)
+            vim.fn.setreg("*", url)
+            vim.notify("Copied: " .. url, vim.log.levels.INFO, { title = "Updater" })
+          else
+            vim.notify("Could not determine release URL", vim.log.levels.WARN, { title = "Updater" })
+          end
+        end
+        return
+      end
+
+      -- Check if cursor is on a commit line
+      local commit_hash = ReleaseDetails.get_commit_at_line(cursor_line)
+      if commit_hash then
+        local remote_url = state.remote_url
+        if remote_url then
+          local url = remote_url .. "/commit/" .. commit_hash
+          vim.fn.setreg("+", url)
+          vim.fn.setreg("*", url)
+          vim.notify("Copied: " .. url, vim.log.levels.INFO, { title = "Updater" })
+        else
+          -- Just copy the commit hash if we can't build a URL
+          vim.fn.setreg("+", commit_hash)
+          vim.fn.setreg("*", commit_hash)
+          vim.notify("Copied commit: " .. commit_hash, vim.log.levels.INFO, { title = "Updater" })
+        end
+      end
     end,
   })
 
-  Window.setup_autocmds(M.close)
+  Window.setup_autocmds(M.close, config)
 
   if Status.has_cached_data() then
     Window.render(config)
@@ -66,7 +182,7 @@ function M.open()
   end
 
   vim.defer_fn(function()
-    Operations.refresh(config, render_callback)
+    Operations.refresh(render_callback)
   end, 10)
 end
 
@@ -76,12 +192,14 @@ function M.close()
 end
 
 function M.refresh()
-  Operations.refresh(config, render_callback)
+  Operations.refresh(render_callback)
 end
 
 function M.check_updates()
+  local config = Config.get()
+
   -- First validate the git repository (async, with caching)
-  Git.validate_git_repository(config.repo_path, function(is_valid, validation_err)
+  Git.validate_git_repository(function(is_valid, validation_err)
     if not is_valid then
       vim.notify(
         "Invalid git repository: " .. (validation_err or "unknown error"),
@@ -92,7 +210,7 @@ function M.check_updates()
     end
 
     -- Now check for updates asynchronously
-    Git.get_repo_status(config, config.repo_path, function(status)
+    Git.get_repo_status(function(status)
       if status.error then
         vim.notify(config.notify.error.message, vim.log.levels.ERROR, { title = config.notify.error.title })
         return
@@ -117,18 +235,20 @@ function M.check_updates()
   end)
 end
 
+-- DEPRECATED
 function M.start_periodic_check()
   Periodic.stop_periodic_check()
-  Periodic.setup_periodic_check(config)
+  Periodic.setup_periodic_check()
 end
 
+-- DEPRECATED
 function M.stop_periodic_check()
   Periodic.stop_periodic_check()
 end
 
 local function load_debug_module()
   local debug = require("updater.debug")
-  debug.init(config)
+  debug.init()
   return debug
 end
 
@@ -151,6 +271,16 @@ local function setup_user_commands()
     debug.register_commands()
     debug.toggle_debug_mode()
   end, { desc = "Toggle Updater debug mode" })
+
+  vim.api.nvim_create_user_command("DotfilesVersion", function(opts)
+    Version.handle_command(opts.args and vim.trim(opts.args) or "")
+  end, {
+    nargs = "?",
+    complete = function(arglead)
+      return Version.get_completion_list(arglead)
+    end,
+    desc = "Switch dotfiles to a specific version or show available versions",
+  })
 end
 
 function M.setup(opts)
@@ -165,13 +295,11 @@ function M.setup(opts)
     return
   end
 
-  config = setup_config
-
-  vim.keymap.set("n", config.keymap.open, M.open, { noremap = true, silent = true, desc = "Open Updater" })
+  vim.keymap.set("n", setup_config.keymap.open, M.open, { noremap = true, silent = true, desc = "Open Updater" })
   setup_user_commands()
 
-  Periodic.setup_startup_check(config, M.check_updates)
-  Periodic.setup_periodic_check(config)
+  Periodic.setup_startup_check(M.check_updates)
+  Periodic.setup_periodic_check()
 end
 
 return M
