@@ -1140,12 +1140,14 @@ function M.get_release_details(tag, prev_tag, callback)
   })
 
   -- Construct GitHub URL
+  pending = pending + 1
   M.get_remote_url(function(remote_url, _)
     if remote_url then
       -- Convert git URL to HTTPS URL for releases
       local https_url = remote_url:gsub("git@github%.com:", "https://github.com/"):gsub("%.git$", "")
       details.url = https_url .. "/releases/tag/" .. tag
     end
+    check_done()
   end)
 end
 

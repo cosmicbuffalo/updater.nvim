@@ -102,6 +102,7 @@ describe("status module", function()
   describe("version tracking helpers", function()
     before_each(function()
       Status.state.current_tag = nil
+      Status.state.is_detached_head = false
     end)
 
     describe("get_version_display", function()
@@ -113,6 +114,26 @@ describe("status module", function()
       it("should return current_tag when on a tag", function()
         Status.state.current_tag = "v1.2.0"
         assert.equals("v1.2.0", Status.get_version_display())
+      end)
+    end)
+
+    describe("is_pinned_to_version", function()
+      it("should return false when not on detached head", function()
+        Status.state.is_detached_head = false
+        Status.state.current_tag = "v1.0.0"
+        assert.is_false(Status.is_pinned_to_version())
+      end)
+
+      it("should return false when on detached head but no tag", function()
+        Status.state.is_detached_head = true
+        Status.state.current_tag = nil
+        assert.is_false(Status.is_pinned_to_version())
+      end)
+
+      it("should return true when on detached head with a tag", function()
+        Status.state.is_detached_head = true
+        Status.state.current_tag = "v1.0.0"
+        assert.is_true(Status.is_pinned_to_version())
       end)
     end)
   end)

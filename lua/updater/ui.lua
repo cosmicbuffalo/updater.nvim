@@ -1032,18 +1032,22 @@ local function highlight_commits_since_release(buffer, ns_id, state)
       local line_content = line[1]
       local is_current = line_content:match("^  →")
 
-      -- Find the hash position
-      local hash_start = is_current and 4 or 4
-      local hash_end = hash_start + #commit.hash
+      -- Find the hash position based on actual line content (byte indices)
+      local hash_start_1 = line_content:find(commit.hash, 1, true)
+      if hash_start_1 then
+        -- Convert to 0-based byte indices for nvim_buf_add_highlight
+        local hash_start_0 = hash_start_1 - 1
+        local hash_end_0 = hash_start_0 + #commit.hash
 
-      if is_current then
-        -- Highlight current commit indicator in green
-        add_highlight(buffer, ns_id, "String", line_num, 2, 4)
-        -- Highlight commit hash in yellow with offset for glyph
-        add_highlight(buffer, ns_id, "WarningMsg", line_num, hash_start, hash_end + 2)
-      else
-        -- Highlight commit hash in yellow
-        add_highlight(buffer, ns_id, "WarningMsg", line_num, hash_start, hash_end)
+        if is_current then
+          -- Highlight current commit indicator in green
+          add_highlight(buffer, ns_id, "String", line_num, 2, 4)
+          -- Highlight commit hash in yellow
+          add_highlight(buffer, ns_id, "WarningMsg", line_num, hash_start_0, hash_end_0)
+        else
+          -- Highlight commit hash in yellow
+          add_highlight(buffer, ns_id, "WarningMsg", line_num, hash_start_0, hash_end_0)
+        end
       end
 
       -- Highlight author in Comment if present

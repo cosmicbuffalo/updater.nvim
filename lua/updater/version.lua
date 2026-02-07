@@ -337,8 +337,14 @@ end
 function M.get_completion_list(arglead)
   arglead = arglead or ""
 
-  -- Return cached tags
   local completions = {}
+
+  -- Always include "latest" as a completion option
+  if arglead == "" or ("latest"):find(arglead, 1, true) == 1 then
+    table.insert(completions, "latest")
+  end
+
+  -- Add cached tags
   for _, tag in ipairs(version_cache.tags) do
     if arglead == "" or tag:find(arglead, 1, true) == 1 then
       table.insert(completions, tag)
@@ -355,8 +361,17 @@ function M.handle_command(arg)
   if arg == "" then
     -- No argument: show version picker
     M.show_version_picker()
+  elseif arg == "latest" then
+    -- Special case: switch to latest (main branch)
+    M.switch_to_latest(function(success, msg)
+      if success then
+        vim.notify(msg, vim.log.levels.INFO, { title = "Dotfiles Version" })
+      else
+        vim.notify(msg, vim.log.levels.ERROR, { title = "Dotfiles Version" })
+      end
+    end)
   else
-    -- Switch to specific version
+    -- Switch to specific version tag
     M.switch_to_version(arg, function(success, msg)
       if success then
         vim.notify(msg, vim.log.levels.INFO, { title = "Dotfiles Version" })

@@ -1,4 +1,26 @@
 local Git = require("updater.git")
+local Version = require("updater.version")
+
+describe("version module", function()
+  describe("get_completion_list", function()
+    it("should always include 'latest' as first option", function()
+      local completions = Version.get_completion_list("")
+      assert.equals("latest", completions[1])
+    end)
+
+    it("should filter 'latest' by prefix", function()
+      local completions = Version.get_completion_list("lat")
+      assert.equals("latest", completions[1])
+    end)
+
+    it("should not include 'latest' when prefix doesn't match", function()
+      local completions = Version.get_completion_list("v1")
+      for _, c in ipairs(completions) do
+        assert.is_not_equal("latest", c)
+      end
+    end)
+  end)
+end)
 
 describe("version comparison", function()
   describe("compare_version_tags", function()

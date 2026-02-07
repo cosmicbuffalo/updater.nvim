@@ -184,6 +184,11 @@ function M.get_version_display()
   return state.current_tag
 end
 
+-- Check if currently pinned to a specific version (on a tag in detached HEAD)
+function M.is_pinned_to_version()
+  return state.is_detached_head and state.current_tag ~= nil
+end
+
 -- Release expansion helpers
 function M.is_release_expanded(tag)
   return state.expanded_releases[tag] == true

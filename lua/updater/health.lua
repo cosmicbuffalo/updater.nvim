@@ -22,7 +22,7 @@ end
 
 -- Cache for API method detection
 local api_method_cache = {
-  method = nil, -- "gh" | "curl" | nil
+  method = nil, -- "gh" | "curl" | "none" | nil (nil = not checked yet)
   checked_at = 0,
   ttl = 300, -- 5 minutes
 }
@@ -34,6 +34,10 @@ function M.get_github_api_method()
 
   -- Return cached result if still valid
   if api_method_cache.method ~= nil and (now - api_method_cache.checked_at) < api_method_cache.ttl then
+    -- Translate "none" sentinel back to nil
+    if api_method_cache.method == "none" then
+      return nil
+    end
     return api_method_cache.method
   end
 
@@ -52,8 +56,8 @@ function M.get_github_api_method()
     return "curl"
   end
 
-  -- No API method available
-  api_method_cache.method = false -- Use false to cache "none available"
+  -- No API method available - use "none" sentinel to cache this result
+  api_method_cache.method = "none"
   api_method_cache.checked_at = now
   return nil
 end
