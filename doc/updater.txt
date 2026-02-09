@@ -1,0 +1,295 @@
+*updater.txt*  Neovim dotfiles version management with semantic versioning
+
+Author:   Nick deLannoy
+Homepage: https://github.com/cosmicbuffalo/updater.nvim
+License:  MIT
+
+==============================================================================
+CONTENTS                                                    *updater-contents*
+
+    1. Introduction ........................... |updater-introduction|
+    2. Requirements ........................... |updater-requirements|
+    3. Installation ........................... |updater-installation|
+    4. Quick Start ............................ |updater-quickstart|
+    5. Commands ............................... |updater-commands|
+    6. Configuration .......................... |updater-configuration|
+    7. TUI Keybindings ........................ |updater-keybindings|
+    8. Version Management ..................... |updater-versions|
+    9. GitHub Integration ..................... |updater-github|
+   10. Creating Releases ...................... |updater-releases|
+   11. Health Check ........................... |updater-health|
+   12. Troubleshooting ........................ |updater-troubleshooting|
+
+==============================================================================
+1. INTRODUCTION                                         *updater-introduction*
+
+updater.nvim is a Neovim plugin for managing your dotfiles repository with
+semantic versioning. Pin your configuration to stable releases, switch between
+versions, and keep your plugins in sync with your dotfiles.
+
+Features:
+
+- Version Management - Pin your dotfiles to specific release tags (e.g., v1.0.0)
+- Automatic Plugin Sync - Restore plugins from lazy-lock.json when switching
+- Mason Tool Sync - Restore mason tools from mason-lock.json (if installed)
+- Release Notes - View GitHub release titles and notes directly in Neovim
+- Visual TUI - Browse releases, view changelogs, and switch versions
+- Update Notifications - Get notified when a new release is available
+- Health Checks - Built-in diagnostics via |:checkhealth| updater
+
+==============================================================================
+2. REQUIREMENTS                                         *updater-requirements*
+
+Required:
+- Neovim >= 0.10.0 (for vim.system() async support)
+- Git
+- lazy.nvim (https://github.com/folke/lazy.nvim)
+
+Recommended:
+- `timeout` command (Linux) or `gtimeout` (macOS via Homebrew)
+
+Optional:
+- gh CLI (https://cli.github.com/) - for GitHub release metadata
+- mason-lock.nvim (https://github.com/zapling/mason-lock.nvim) - for mason sync
+- fidget.nvim (https://github.com/j-hui/fidget.nvim) - for progress indicators
+
+==============================================================================
+3. INSTALLATION                                         *updater-installation*
+
+Using lazy.nvim: >lua
+
+    {
+        "cosmicbuffalo/updater.nvim",
+        opts = {
+            versioned_releases_only = true,
+        },
+    }
+<
+
+==============================================================================
+4. QUICK START                                            *updater-quickstart*
+
+1. Create a release tag in your dotfiles repository: >bash
+
+    cd ~/.config/nvim
+    git add -A && git commit -m "Release v1.0.0"
+    git tag v1.0.0
+    git push origin main --tags
+<
+
+2. Open the updater with `<leader>e` or `:UpdaterOpen`
+
+3. Switch versions using the TUI or `:DotfilesVersion v1.0.0`
+
+==============================================================================
+5. COMMANDS                                                 *updater-commands*
+
+                                                               *:UpdaterOpen*
+:UpdaterOpen
+    Open the updater TUI window. Shows current version status, available
+    releases, and provides keybindings for version management.
+
+                                                           *:DotfilesVersion*
+:DotfilesVersion [{version}]
+    Manage dotfiles versions. Without arguments, opens an interactive picker.
+    With a version argument, switches to that specific version.
+
+    Examples: >vim
+        :DotfilesVersion              " Open interactive version picker
+        :DotfilesVersion v1.2.0       " Switch to specific version
+        :DotfilesVersion latest       " Switch to the latest release
+<
+    Tab completion is available for version tags.
+
+                                                              *:UpdaterCheck*
+:UpdaterCheck
+    Check for updates and show a notification with the result.
+
+                                                      *:UpdaterStartChecking*
+:UpdaterStartChecking
+    Start periodic update checking in the background.
+    DEPRECATED: Will be removed in a future release.
+
+                                                       *:UpdaterStopChecking*
+:UpdaterStopChecking
+    Stop periodic update checking.
+    DEPRECATED: Will be removed in a future release.
+
+                                                        *:UpdaterDebugToggle*
+:UpdaterDebugToggle
+    Toggle debug mode for testing without making git changes.
+    DEPRECATED: Will be removed in a future release.
+
+==============================================================================
+6. CONFIGURATION                                       *updater-configuration*
+
+Call the setup function with your options: >lua
+
+    require("updater").setup({
+        -- Path to your dotfiles repository
+        -- Default: vim.fn.stdpath("config")
+        repo_path = vim.fn.stdpath("config"),
+
+        -- RECOMMENDED: Enable release-based version management
+        versioned_releases_only = true,
+
+        -- Pattern for version tags
+        -- Default: "v*"
+        version_tag_pattern = "v*",
+
+        -- Main branch name
+        -- Default: "main"
+        main_branch = "main",
+
+        -- Window title
+        -- Default: "Neovim Dotfiles Updater"
+        title = "Neovim Dotfiles Updater",
+
+        -- Keybindings (DEPRECATED)
+        keymap = {
+            open = "<leader>e",
+            update = "u",
+            refresh = "r",
+            close = "q",
+            install_plugins = "i",
+            update_all = "U",
+        },
+
+        -- Automatic update checking on startup
+        check_updates_on_startup = {
+            enabled = true,
+        },
+
+        -- Periodic background checks (DEPRECATED)
+        periodic_check = {
+            enabled = true,
+            frequency_minutes = 20,
+        },
+
+        -- Git options
+        git = {
+            rebase = true,
+            autostash = true,
+        },
+
+        -- Operation timeouts (seconds)
+        timeouts = {
+            fetch = 30,
+            pull = 30,
+            merge = 30,
+            log = 15,
+            status = 10,
+            default = 20,
+        },
+
+        -- Filetypes where update checks are skipped
+        excluded_filetypes = { "gitcommit", "gitrebase" },
+    })
+<
+
+==============================================================================
+7. TUI KEYBINDINGS                                       *updater-keybindings*
+
+When `versioned_releases_only = true` (recommended):
+
+    Key         Action ~
+    `s`           Switch to the release under cursor
+    `U`           Switch to the latest release
+    `<Enter>`     Expand/collapse release details
+    `r`           Refresh status
+    `q` / `<Esc>` Close the TUI
+    `j` / `k`     Navigate between releases
+    `y`           Copy release URL to clipboard
+
+==============================================================================
+8. VERSION MANAGEMENT                                      *updater-versions*
+
+What Happens When You Switch Versions ~
+
+1. Safety Check - Verifies no uncommitted changes exist
+   (lazy-lock.json and mason-lock.json are ignored)
+2. Git Checkout - Checks out the specified tag (detached HEAD)
+3. Plugin Restore - Runs lazy.restore() to sync plugins with lazy-lock.json
+4. Mason Restore - Runs mason-lock.restore() if mason-lock.nvim is installed
+5. State Update - Updates the TUI to reflect the new version
+
+IMPORTANT: Switching your dotfiles version requires you to close and reopen
+Neovim to load all the updates!
+
+==============================================================================
+9. GITHUB INTEGRATION                                        *updater-github*
+
+If you have the GitHub CLI (gh) installed and authenticated, updater.nvim
+will fetch release metadata from GitHub:
+
+- Release Titles - Displayed alongside version tags
+- Release Notes - Shown when expanding a release in the TUI
+- Prerelease Tags - Marked in the version picker
+
+For public repositories, `curl` can be used as a fallback without
+authentication.
+
+Run `:checkhealth updater` to verify your GitHub API access.
+
+==============================================================================
+10. CREATING RELEASES                                       *updater-releases*
+
+To create a new release for your dotfiles: >bash
+
+    cd ~/.config/nvim
+
+    # Ensure lazy-lock.json is up to date
+    nvim -c "Lazy sync" -c "qa"
+
+    # If using mason-lock.nvim, update the lockfile
+    nvim -c "MasonLock" -c "qa"
+
+    # Commit and tag
+    git add -A
+    git commit -m "Release v1.0.0: Description of changes"
+    git tag v1.0.0
+    git push origin main --tags
+<
+
+Users can then switch to this version: >vim
+
+    :DotfilesVersion v1.0.0
+<
+
+==============================================================================
+11. HEALTH CHECK                                             *updater-health*
+
+Run the health check to diagnose common issues: >vim
+
+    :checkhealth updater
+<
+
+The health check verifies:
+- Git command availability
+- GitHub CLI authentication status
+- Timeout utility availability
+- Neovim version compatibility
+- lazy.nvim integration
+- fidget.nvim integration
+- Debug mode status
+
+==============================================================================
+12. TROUBLESHOOTING                                   *updater-troubleshooting*
+
+"Cannot switch: uncommitted changes exist" ~
+    Commit or stash your changes before switching versions. The plugin
+    ignores changes to lazy-lock.json and mason-lock.json.
+
+"No version tags found" ~
+    Create version tags in your dotfiles repository using `git tag v1.0.0`.
+
+GitHub release notes not showing ~
+    Run `:checkhealth updater` to verify gh CLI is installed and
+    authenticated, or that curl is available for public repositories.
+
+Plugins not restored after switching ~
+    Ensure lazy-lock.json is committed at each release tag. The restore
+    runs in a headless Neovim instance to avoid UI conflicts.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
