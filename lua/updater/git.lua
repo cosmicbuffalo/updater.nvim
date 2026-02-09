@@ -545,13 +545,13 @@ function M.get_validation_status(path)
   return validation_cache[path]
 end
 
--- Get list of version tags sorted by semantic version (newest first)
+-- Get list of version tags sorted by commit timestamp (newest first)
 function M.get_version_tags(callback)
   local config = Config.get()
   local pattern = config.version_tag_pattern or "v*"
-  -- Fetch tags first, then list them sorted by version
+  -- Fetch tags first, then list them sorted by the commit date they point to
   M.execute_command(
-    "git fetch --tags --quiet && git tag -l " .. vim.fn.shellescape(pattern) .. " --sort=-version:refname",
+    "git fetch --tags --quiet && git tag -l " .. vim.fn.shellescape(pattern) .. " --sort=-creatordate",
     {
       timeout_key = "status",
       operation_name = "Git tag list",
