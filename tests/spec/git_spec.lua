@@ -259,4 +259,183 @@ describe("git module", function()
       assert.equals(original_commit, current_commit)
     end)
   end)
+
+  describe("get_version_tags", function()
+    it("should return empty list when no tags exist", function()
+      local done = false
+      local result_tags = nil
+
+      Git.get_version_tags(function(tags, _err)
+        result_tags = tags
+        done = true
+      end)
+
+      vim.wait(2000, function()
+        return done
+      end, 50)
+
+      assert.is_not_nil(result_tags)
+      assert.equals(0, #result_tags)
+    end)
+
+    it("should return tags matching the pattern", function()
+      -- Create some version tags
+      vim.fn.system("cd " .. test_config.repo_path .. " && git tag v1.0.0")
+
+      local done = false
+      local result_tags = nil
+
+      Git.get_version_tags(function(tags, _err)
+        result_tags = tags
+        done = true
+      end)
+
+      vim.wait(2000, function()
+        return done
+      end, 50)
+
+      assert.is_not_nil(result_tags)
+      assert.equals(1, #result_tags)
+      assert.equals("v1.0.0", result_tags[1])
+    end)
+
+    it("should sort tags by commit timestamp, not by version string", function()
+      -- This test verifies that tags are sorted by the commit date they point to,
+      -- not by semantic version string parsing.
+      --
+      -- We create commits and tags in this order:
+      -- 1. Commit A -> tag v0.0.1-wip5 (older timestamp: 2024-01-01)
+      -- 2. Commit B -> tag v0.0.1-pre2 (newer timestamp: 2024-01-02)
+      --
+      -- If sorted by version string, "wip5" > "pre2" alphabetically, so v0.0.1-wip5 would come first.
+      -- If sorted by commit timestamp, v0.0.1-pre2 should come first (it's on the newer commit).
+      --
+      -- We use GIT_COMMITTER_DATE to ensure distinct timestamps without slow sleeps.
+
+      -- Amend the initial commit to have an explicit old date, then tag it
+      vim.fn.system(
+        "cd "
+          .. test_config.repo_path
+          .. " && GIT_COMMITTER_DATE='2024-01-01T00:00:00' git commit --amend --no-edit --date='2024-01-01T00:00:00'"
+      )
+      vim.fn.system("cd " .. test_config.repo_path .. " && git tag v0.0.1-wip5")
+
+      -- Create second commit with explicit newer date and tag
+      local test_file2 = test_config.repo_path .. "/file2.txt"
+      local file = io.open(test_file2, "w")
+      if file then
+        file:write("second commit content")
+        file:close()
+      end
+      vim.fn.system(
+        "cd "
+          .. test_config.repo_path
+          .. " && git add . && GIT_COMMITTER_DATE='2024-01-02T00:00:00' git commit -m 'second commit' --date='2024-01-02T00:00:00'"
+      )
+      vim.fn.system("cd " .. test_config.repo_path .. " && git tag v0.0.1-pre2")
+
+      local done = false
+      local result_tags = nil
+
+      Git.get_version_tags(function(tags, _err)
+        result_tags = tags
+        done = true
+      end)
+
+      vim.wait(2000, function()
+        return done
+      end, 50)
+
+      assert.is_not_nil(result_tags)
+      assert.equals(2, #result_tags)
+      -- v0.0.1-pre2 should be first because it's on the newer commit
+      assert.equals("v0.0.1-pre2", result_tags[1])
+      assert.equals("v0.0.1-wip5", result_tags[2])
+    end)
+
+    it("should sort multiple tags by commit timestamp descending", function()
+      -- Create commits with tags in sequence, using explicit dates for reliable ordering
+      -- We use GIT_COMMITTER_DATE to ensure distinct timestamps without slow sleeps.
+
+      -- Amend the initial commit to have an explicit old date, then tag it
+      vim.fn.system(
+        "cd "
+          .. test_config.repo_path
+          .. " && GIT_COMMITTER_DATE='2024-01-01T00:00:00' git commit --amend --no-edit --date='2024-01-01T00:00:00'"
+      )
+      vim.fn.system("cd " .. test_config.repo_path .. " && git tag v1.0.0")
+
+      -- Second commit with explicit date
+      local test_file2 = test_config.repo_path .. "/file2.txt"
+      local file2 = io.open(test_file2, "w")
+      if file2 then
+        file2:write("content 2")
+        file2:close()
+      end
+      vim.fn.system(
+        "cd "
+          .. test_config.repo_path
+          .. " && git add . && GIT_COMMITTER_DATE='2024-01-02T00:00:00' git commit -m 'commit 2' --date='2024-01-02T00:00:00' && git tag v2.0.0"
+      )
+
+      -- Third commit with explicit later date
+      local test_file3 = test_config.repo_path .. "/file3.txt"
+      local file3 = io.open(test_file3, "w")
+      if file3 then
+        file3:write("content 3")
+        file3:close()
+      end
+      vim.fn.system(
+        "cd "
+          .. test_config.repo_path
+          .. " && git add . && GIT_COMMITTER_DATE='2024-01-03T00:00:00' git commit -m 'commit 3' --date='2024-01-03T00:00:00' && git tag v1.5.0"
+      )
+
+      local done = false
+      local result_tags = nil
+
+      Git.get_version_tags(function(tags, _err)
+        result_tags = tags
+        done = true
+      end)
+
+      vim.wait(2000, function()
+        return done
+      end, 50)
+
+      assert.is_not_nil(result_tags)
+      assert.equals(3, #result_tags)
+      -- Should be sorted by commit date: v1.5.0 (newest), v2.0.0, v1.0.0 (oldest)
+      assert.equals("v1.5.0", result_tags[1])
+      assert.equals("v2.0.0", result_tags[2])
+      assert.equals("v1.0.0", result_tags[3])
+    end)
+
+    it("should only return tags matching version pattern", function()
+      -- Create version tags and non-version tags
+      vim.fn.system("cd " .. test_config.repo_path .. " && git tag v1.0.0")
+      vim.fn.system("cd " .. test_config.repo_path .. " && git tag release-1.0")
+      vim.fn.system("cd " .. test_config.repo_path .. " && git tag v2.0.0")
+
+      local done = false
+      local result_tags = nil
+
+      Git.get_version_tags(function(tags, _err)
+        result_tags = tags
+        done = true
+      end)
+
+      vim.wait(2000, function()
+        return done
+      end, 50)
+
+      assert.is_not_nil(result_tags)
+      -- Should only include v* tags, not release-1.0
+      assert.equals(2, #result_tags)
+      -- Both should be v* tags
+      for _, tag in ipairs(result_tags) do
+        assert.is_truthy(tag:match("^v"))
+      end
+    end)
+  end)
 end)
